@@ -1,0 +1,36 @@
+{
+  "name": "clipvault",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A simple desktop app starter built with React, Vite, and Electron.",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "build": "vite build",
+    "start": "electron .",
+    "dist:mac": "npm run build && electron-builder --mac dmg"
+  },
+  "build": {
+    "appId": "com.clipvault.desktop",
+    "productName": "ClipVault",
+    "directories": { "output": "release" },
+    "files": ["dist/**/*", "electron/**/*", "package.json"],
+    "mac": { "target": ["dmg"] }
+  },
+  "dependencies": {
+    "react": "latest",
+    "react-dom": "latest",
+    "lucide-react": "latest"
+  },
+  "devDependencies": {
+	"@vitejs/plugin-react": "latest",
+	"vite": "latest",
+    "autoprefixer": "latest",
+    "concurrently": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "postcss": "latest",
+    "tailwindcss": "^3.4.17",
+    "wait-on": "latest"
+  }
+}
