@@ -1,6 +1,5 @@
-const { contextBridge } = require('electron')
+const { contextBridge, ipcRenderer } = require('electron')
+const { createRendererApi } = require('./renderer-api')
 
-// Keep the renderer API intentionally small. Add capabilities here as features are built.
-contextBridge.exposeInMainWorld('clipVault', {
-  getAppVersion: () => process.env.npm_package_version || '1.0.0',
-})
+// Expose named capabilities only. Never pass ipcRenderer itself across the bridge.
+contextBridge.exposeInMainWorld('clipVault', createRendererApi(ipcRenderer))

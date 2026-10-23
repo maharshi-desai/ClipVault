@@ -1,4 +1,5 @@
 import { ArrowDownUp, Archive, Command, Search, Settings2, Sparkles } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 const clips = [
   { kind: 'TEXT', title: 'Welcome to ClipVault', preview: 'Your copied snippets will be easy to find, organize, and reuse.', time: 'Just now', color: 'bg-violet-100 text-violet-700' },
@@ -7,6 +8,29 @@ const clips = [
 ]
 
 function App() {
+  const [appInfo, setAppInfo] = useState(null)
+  const [windowState, setWindowState] = useState('unknown')
+  const [appInfoError, setAppInfoError] = useState('')
+
+  useEffect(() => {
+    const api = window.clipVault
+    if (!api) return undefined
+
+    api.getAppInfo()
+      .then(setAppInfo)
+      .catch(() => setAppInfoError('Application information is unavailable.'))
+
+    return api.onWindowStateChanged(setWindowState)
+  }, [])
+
+  const platformName = appInfo?.platform === 'darwin'
+    ? 'macOS'
+    : appInfo?.platform === 'win32'
+      ? 'Windows'
+      : appInfo?.platform === 'linux'
+        ? 'Linux'
+        : appInfo?.platform
+
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
       <div className="mx-auto flex min-h-screen max-w-6xl">
@@ -36,7 +60,11 @@ function App() {
           <div className="space-y-3">
             {clips.map((clip) => <article key={clip.title} className="group rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-200 hover:shadow"><div className="mb-3 flex items-center justify-between"><span className={`rounded-md px-2 py-1 text-[10px] font-bold tracking-wide ${clip.color}`}>{clip.kind}</span><time className="text-xs text-slate-400">{clip.time}</time></div><h3 className="mb-1 text-sm font-semibold">{clip.title}</h3><p className="truncate text-sm text-slate-500">{clip.preview}</p></article>)}
           </div>
-          <footer className="mt-10 text-center text-xs text-slate-400">ClipVault starter • Built for your ideas</footer>
+          <footer className="mt-10 text-center text-xs text-slate-400">
+            {appInfo
+              ? `${appInfo.name} v${appInfo.version} · ${platformName} · Window ${windowState}`
+              : appInfoError || 'Loading application information…'}
+          </footer>
         </section>
       </div>
     </main>

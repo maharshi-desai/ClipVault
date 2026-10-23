@@ -1,7 +1,10 @@
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('node:path')
+const { IPC_CHANNELS } = require('./ipc-contract')
+const { createGetAppInfoHandler } = require('./ipc-handlers')
 
 const isDevelopment = !app.isPackaged
+const trustedWebContents = new Set()
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -17,6 +20,9 @@ function createWindow() {
       nodeIntegration: false,
     },
   })
+  const windowContents = window.webContents
+  trustedWebContents.add(windowContents)
+  window.on('closed', () => trustedWebContents.delete(windowContents))
 
   if (isDevelopment) {
     window.loadURL('http://127.0.0.1:5173')
@@ -24,9 +30,21 @@ function createWindow() {
   } else {
     window.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
+
+  window.on('focus', () => {
+    window.webContents.send(IPC_CHANNELS.windowStateChanged, { state: 'focused' })
+  })
+  window.on('blur', () => {
+    window.webContents.send(IPC_CHANNELS.windowStateChanged, { state: 'blurred' })
+  })
 }
 
 app.whenReady().then(() => {
+  ipcMain.handle(
+    IPC_CHANNELS.getAppInfo,
+    createGetAppInfoHandler({ app, BrowserWindow, platform: process.platform, trustedWebContents }),
+  )
+
   createWindow()
 
   app.on('activate', () => {
