@@ -25,3 +25,16 @@ The successful build emitted Vite configuration loader and PostCSS module type w
 - Added JavaScript tests with Node's built-in test runner and updated the architecture, API map, and viva guide.
 - `npm test` — passed: 7 tests, 0 failures. Coverage includes app-info response shape, argument rejection, sender/frame and allowlist rejection, fixed-channel invocation, event filtering, callback validation, and idempotent unsubscription.
 - `npm run build` — passed with Vite 8.3.5; generated `dist/index.html`, CSS (9.14 kB), and JS (229.28 kB). Existing Vite config-loader and PostCSS module-type warnings remain non-fatal.
+
+## 2026-10-23 — Phase 3: Clipboard engine and local storage
+
+- Added main-process text polling with a startup/resume baseline, a one-second default interval, pause/resume controls, a 25,000-character default entry cap, and an environment-configurable history limit of 500 by default.
+- Added a serialized asynchronous JSON store under Electron's `userData` directory. It uses UUIDs and ISO timestamps, skips exact duplicate text, keeps newest entries first, and writes only on history changes.
+- Added IPC methods for history retrieval/search/copy/delete/clear and capture status/pause/resume. Main validates sender, argument count, query size, and entry IDs. Preload event subscriptions validate/sanitize payloads and return unsubscribe functions.
+- Added the React history screen with live new-entry updates, search, copy/delete/clear actions, capture status/pause-resume controls, and a privacy warning.
+- Added tests for history behavior, duplicate handling, limits, paused capture, IPC argument validation, and storage errors/corruption.
+- `npm test` — passed: 26 tests, 0 failures.
+- `node --check` — passed for all Electron JavaScript entry/modules.
+- `npm run build` — passed with Vite 8.3.5; generated `dist/index.html`, CSS (10.53 kB), and JS (234.30 kB). The existing Vite config-loader and PostCSS module-type warnings remain non-fatal.
+- Lint — unavailable: this project has no lint script or configured linter.
+- Final Phase 3 review: confirmed pause/quit timer cleanup, resume baselining, trusted-frame IPC checks, event unsubscription, local-only handling, and temporary-file rename writes. Added a regression test that simulates a failed atomic rename and verifies the prior JSON history stays readable and the temporary file is cleaned up. No live clipboard test was run during this review.

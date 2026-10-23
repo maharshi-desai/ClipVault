@@ -1,10 +1,21 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, clipboard, ipcMain } = require('electron')
 const path = require('node:path')
 const { IPC_CHANNELS } = require('./ipc-contract')
-const { createGetAppInfoHandler } = require('./ipc-handlers')
+const { registerIpcHandlers } = require('./ipc-handlers')
+const { ClipboardHistoryStore } = require('./clipboard-history-store')
+const { ClipboardMonitor } = require('./clipboard-monitor')
+const { HISTORY_LIMIT, MAX_CLIPBOARD_TEXT_CHARS, POLL_INTERVAL_MS } = require('./config')
 
 const isDevelopment = !app.isPackaged
 const trustedWebContents = new Set()
+let clipboardMonitor
+let isQuitting = false
+
+function sendToRenderers(channel, payload) {
+  for (const webContents of trustedWebContents) {
+    if (!webContents.isDestroyed()) webContents.send(channel, payload)
+  }
+}
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -39,17 +50,48 @@ function createWindow() {
   })
 }
 
-app.whenReady().then(() => {
-  ipcMain.handle(
-    IPC_CHANNELS.getAppInfo,
-    createGetAppInfoHandler({ app, BrowserWindow, platform: process.platform, trustedWebContents }),
-  )
+app.whenReady().then(async () => {
+  const historyStore = new ClipboardHistoryStore({
+    filePath: path.join(app.getPath('userData'), 'clipboard-history.json'),
+    maxEntries: HISTORY_LIMIT,
+    maxTextChars: MAX_CLIPBOARD_TEXT_CHARS,
+  })
+
+  clipboardMonitor = new ClipboardMonitor({
+    clipboard,
+    historyStore,
+    pollIntervalMs: POLL_INTERVAL_MS,
+    maxTextChars: MAX_CLIPBOARD_TEXT_CHARS,
+    historyLimit: HISTORY_LIMIT,
+    onEntry: (entry) => sendToRenderers(IPC_CHANNELS.clipboardEntry, entry),
+    onStatusChange: (status) => sendToRenderers(IPC_CHANNELS.captureStatusChanged, status),
+  })
+
+  registerIpcHandlers({
+    ipcMain,
+    app,
+    BrowserWindow,
+    trustedWebContents,
+    historyStore,
+    clipboardMonitor,
+    clipboard,
+  })
+
+  await historyStore.initialize()
+  await clipboardMonitor.start()
 
   createWindow()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+app.on('before-quit', (event) => {
+  if (isQuitting) return
+  event.preventDefault()
+  isQuitting = true
+  Promise.resolve(clipboardMonitor?.stop()).finally(() => app.quit())
 })
 
 app.on('window-all-closed', () => {

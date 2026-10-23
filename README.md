@@ -1,6 +1,6 @@
 # ClipVault
 
-ClipVault is a starter desktop app built with React, Vite, JavaScript/JSX, Tailwind CSS, and Electron. It provides a basic desktop window and a static sample interface to build on.
+ClipVault is a desktop clipboard history app built with React, Vite, JavaScript/JSX, Tailwind CSS, and Electron. Clipboard text is monitored and stored locally by the Electron main process.
 
 ## Requirements
 
@@ -27,6 +27,12 @@ Build the renderer for production:
 npm run build
 ```
 
+Run the JavaScript test suite:
+
+```sh
+npm test
+```
+
 Package the app as a macOS DMG:
 
 ```sh
@@ -51,8 +57,11 @@ postcss.config.js
 
 - `electron/main.js` creates the desktop window and loads the Vite server in development or `dist/index.html` in production.
 - `electron/preload.js` exposes the narrow `window.clipVault` API to the renderer.
+- `electron/clipboard-monitor.js` polls the system clipboard, maintains the startup/resume baseline, and supports pause/resume.
+- `electron/clipboard-history-store.js` searches and mutates the JSON history under Electron's user data folder.
+- `electron/config.js` holds capture interval, history count, and clipboard-text limits.
 - `src/main.jsx` mounts React and loads the global stylesheet.
-- `src/App.jsx` contains the starter interface.
+- `src/App.jsx` displays history and provides search, copy, delete, clear, and capture controls.
 - `src/index.css` includes Tailwind layers and global page defaults.
 - `package.json` defines dependencies, npm scripts, and electron-builder's DMG target.
 
@@ -60,8 +69,10 @@ postcss.config.js
 
 The renderer runs with `contextIsolation: true` and `nodeIntegration: false`. Renderer code does not import Node.js or Electron APIs directly. Add future desktop capabilities through a narrow preload API and matching main-process handlers.
 
-## Current scope
+## Privacy and scope
 
-This is the initial foundation phase. The sample clip cards are static. Clipboard monitoring, clipboard access, and persistence have not been added.
+Clipboard history may contain sensitive information. It is stored locally as JSON and is not automatically encrypted. The interface displays capture status and provides pause/resume and clear-history controls. Clipboard content is not sent to a remote server.
+
+Capture defaults to a one-second polling interval, 500 history entries, and a 25,000-character text limit. You can override these defaults with `CLIPVAULT_POLL_INTERVAL_MS`, `CLIPVAULT_HISTORY_LIMIT`, and `CLIPVAULT_MAX_TEXT_CHARS`.
 
 For development details and the architecture overview, see [`docs/development-log.md`](docs/development-log.md), [`docs/architecture.md`](docs/architecture.md), and [`docs/viva-guide.md`](docs/viva-guide.md).
