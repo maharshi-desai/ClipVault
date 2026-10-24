@@ -161,6 +161,20 @@ class ClipboardHistoryStore {
     return this.storageAvailable
   }
 
+  setMaxEntries(maxEntries) {
+    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > 5000) {
+      throw new TypeError('History limit is invalid.')
+    }
+    return this.runExclusive(async () => {
+      await this.loadIfNeeded()
+      const nextEntries = this.entries.slice(0, maxEntries)
+      if (nextEntries.length !== this.entries.length) await this.persist(nextEntries)
+      this.entries = nextEntries
+      this.maxEntries = maxEntries
+      return this.maxEntries
+    })
+  }
+
   async persist(entries) {
     const document = JSON.stringify({ version: 1, entries })
     if (Buffer.byteLength(document, 'utf8') > this.maxFileBytes) {

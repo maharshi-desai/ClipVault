@@ -6,6 +6,17 @@ const IPC_CHANNELS = Object.freeze({
   copyHistoryEntry: 'clipvault:history:copy',
   deleteHistoryEntry: 'clipvault:history:delete',
   clearHistory: 'clipvault:history:clear',
+  historyCleared: 'clipvault:history:cleared',
+  getSnippets: 'clipvault:snippets:get',
+  saveSnippet: 'clipvault:snippets:save',
+  deleteSnippet: 'clipvault:snippets:delete',
+  setSnippetPinned: 'clipvault:snippets:set-pinned',
+  copySnippet: 'clipvault:snippets:copy',
+  getPreferences: 'clipvault:preferences:get',
+  updatePreferences: 'clipvault:preferences:update',
+  getAppearance: 'clipvault:appearance:get',
+  appearanceChanged: 'clipvault:appearance:changed',
+  closePopup: 'clipvault:popup:close',
   pauseCapture: 'clipvault:capture:pause',
   resumeCapture: 'clipvault:capture:resume',
   getCaptureStatus: 'clipvault:capture:get-status',
@@ -50,6 +61,18 @@ function isCaptureStatusPayload(payload) {
   )
 }
 
+function isHistoryClearedPayload(payload) {
+  return Boolean(payload && Number.isSafeInteger(payload.count) && payload.count >= 0)
+}
+
+function isAppearancePayload(payload) {
+  return Boolean(
+    payload &&
+      (payload.theme === 'system' || payload.theme === 'light' || payload.theme === 'dark') &&
+      typeof payload.dark === 'boolean',
+  )
+}
+
 function isTrustedMainFrameEvent(event, BrowserWindow, trustedWebContents) {
   if (!event || !event.sender || !event.senderFrame) return false
   if (event.senderFrame !== event.sender.mainFrame) return false
@@ -62,7 +85,9 @@ function isTrustedMainFrameEvent(event, BrowserWindow, trustedWebContents) {
 module.exports = {
   IPC_CHANNELS,
   isCaptureStatusPayload,
+  isAppearancePayload,
   isClipboardEntryPayload,
+  isHistoryClearedPayload,
   isTrustedMainFrameEvent,
   isWindowStatePayload,
 }

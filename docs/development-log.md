@@ -38,3 +38,24 @@ The successful build emitted Vite configuration loader and PostCSS module type w
 - `npm run build` — passed with Vite 8.3.5; generated `dist/index.html`, CSS (10.53 kB), and JS (234.30 kB). The existing Vite config-loader and PostCSS module-type warnings remain non-fatal.
 - Lint — unavailable: this project has no lint script or configured linter.
 - Final Phase 3 review: confirmed pause/quit timer cleanup, resume baselining, trusted-frame IPC checks, event unsubscription, local-only handling, and temporary-file rename writes. Added a regression test that simulates a failed atomic rename and verifies the prior JSON history stays readable and the temporary file is cleaned up. No live clipboard test was run during this review.
+
+## 2026-10-23 — Phase 4: Menu bar-first macOS interaction
+
+- Added a single-instance application lock and a menu bar controller that creates one compact popup window, positions it below the tray inside the active display work area, and reuses/focuses it rather than creating duplicates.
+- Added a monochrome clipboard tray PNG and mark it as a macOS template image. The tray menu shows the popup, pauses/resumes capture, clears history after native confirmation, and quits the app.
+- Registered `CommandOrControl+Shift+V` to toggle the popup. Registration errors/false returns are handled; the tray tooltip/menu indicate when the shortcut is unavailable. The shortcut and tray are cleaned up during quit.
+- Popup blur, Escape, or close hides it while leaving the tray application running. macOS `activate` and a second app launch show the existing popup. The native clear confirmation is shared between renderer and tray requests, and the renderer refreshes from a narrow clear-notification event.
+- Added mocked Electron tests for popup singleton/position/focus/close, tray actions, shortcut failure/cleanup, native clear confirmation/cancellation, and app quit ordering. These tests do not validate native macOS rendering or permissions.
+- `npm test` — passed: 34 tests, 0 failures. `npm run build` — passed with Vite 8.3.5; existing Vite config-loader and PostCSS module-type warnings remain non-fatal. `node --check` passed for the changed Electron modules; `git diff --check` passed.
+- Development launch check: `npm run dev` reached Vite ready, returned HTTP 200 for the renderer, and the ClipVault Electron process was present. Native tray/window interaction could not be observed because the Mac desktop was locked and the computer-use tool could not unlock it; no claim of manual shortcut/menu interaction is made.
+
+## 2026-10-24 — Full utility interface and user preferences
+
+- Replaced the starter history screen with a compact React/Tailwind interface for searchable clip history, timestamps/previews, copy/delete, snippets, capture state, settings, loading/empty/error feedback, and keyboard navigation.
+- Added reusable snippet create/edit/search/pin/copy/delete operations with main-process JSON persistence. Snippet copy accepts a validated ID; renderer never receives clipboard or filesystem APIs.
+- Added persisted appearance/history/privacy preferences. Electron `nativeTheme` handles system/light/dark modes and broadcasts effective appearance changes; history-limit changes trim oldest items, and capture-on-launch can be disabled.
+- Added `window.clipVault` methods/events for snippets, preferences, appearance, and popup close. Clear history remains behind a native Electron confirmation.
+- Added tests for snippet persistence/CRUD/search/pinning, preferences persistence/recovery, validated IPC operations, and appearance event filtering/unsubscribe.
+- `npm test` — passed: 41 tests, 0 failures. `npm run build` — passed with Vite 8.3.5; the existing Vite config-loader and PostCSS module-type warnings remain non-fatal. Changed Electron modules passed `node --check`; `git diff --check` passed.
+- Live macOS visual check: the popup, capture status, preferences, system/light appearance controls, snippets empty state, and snippet create/delete were exercised. The first launch showed an unavailable bridge because the sandboxed preload could not load its local CommonJS API module. Disabled the preload sandbox while retaining `contextIsolation: true`, `nodeIntegration: false`, and the named contextBridge surface; after restart the renderer connected and showed the live capture status. No clipboard text capture action was manually checked in this visual pass.
+- After the preload correction, `npm test` passed again (41 tests), `npm run build` passed, and the development UI was relaunched successfully.

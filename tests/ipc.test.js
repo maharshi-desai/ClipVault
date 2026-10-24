@@ -4,6 +4,8 @@ const {
   IPC_CHANNELS,
   isCaptureStatusPayload,
   isClipboardEntryPayload,
+  isAppearancePayload,
+  isHistoryClearedPayload,
   isWindowStatePayload,
 } = require('../electron/ipc-contract')
 const { createGetAppInfoHandler, registerIpcHandlers } = require('../electron/ipc-handlers')
@@ -88,9 +90,10 @@ test('renderer API invokes only the app info channel with no arguments', async (
   assert.deepEqual(await api.getAppInfo(), { name: 'ClipVault' })
   assert.deepEqual(calls, [[IPC_CHANNELS.getAppInfo]])
   assert.deepEqual(Object.keys(api).sort(), [
-    'clearHistory', 'copyHistoryEntry', 'deleteHistoryEntry', 'getAppInfo', 'getCaptureStatus',
-    'getHistory', 'onCaptureStatusChanged', 'onClipboardEntry', 'onWindowStateChanged',
-    'pauseCapture', 'resumeCapture', 'searchHistory',
+    'clearHistory', 'closePopup', 'copyHistoryEntry', 'copySnippet', 'deleteHistoryEntry', 'deleteSnippet',
+    'getAppInfo', 'getAppearance', 'getCaptureStatus', 'getHistory', 'getPreferences', 'getSnippets',
+    'onAppearanceChanged', 'onCaptureStatusChanged', 'onClipboardEntry', 'onHistoryCleared', 'onWindowStateChanged',
+    'pauseCapture', 'resumeCapture', 'saveSnippet', 'searchHistory', 'setSnippetPinned', 'updatePreferences',
   ])
 })
 
@@ -155,6 +158,7 @@ test('main IPC handlers validate queries, IDs, sender frames and argument counts
       getStatus: () => ({ enabled: true }),
     },
     clipboard: { writeText: (text) => copied.push(text) },
+    dialog: { showMessageBox: async () => ({ response: 1 }) },
   })
 
   assert.deepEqual(await handlers.get(IPC_CHANNELS.getHistory)(event), [])
@@ -168,7 +172,7 @@ test('main IPC handlers validate queries, IDs, sender frames and argument counts
   assert.deepEqual(await handlers.get(IPC_CHANNELS.pauseCapture)(event), { enabled: false })
   assert.deepEqual(await handlers.get(IPC_CHANNELS.resumeCapture)(event), { enabled: true })
   assert.deepEqual(handlers.get(IPC_CHANNELS.getCaptureStatus)(event), { enabled: true })
-  assert.equal(await handlers.get(IPC_CHANNELS.clearHistory)(event), 1)
+  assert.deepEqual(await handlers.get(IPC_CHANNELS.clearHistory)(event), { cleared: true, count: 1 })
   await assert.rejects(async () => handlers.get(IPC_CHANNELS.getHistory)({ sender: {}, senderFrame: {} }), /untrusted renderer/)
 })
 
@@ -190,6 +194,15 @@ test('renderer API exposes named history and capture operations on fixed channel
   await api.resumeCapture()
   await api.getCaptureStatus()
   await api.clearHistory()
+  await api.getSnippets('welcome')
+  await api.saveSnippet({ title: 'Welcome', content: 'Hello' })
+  await api.copySnippet('snippet-id')
+  await api.deleteSnippet('snippet-id')
+  await api.setSnippetPinned('snippet-id', true)
+  await api.getPreferences()
+  await api.updatePreferences({ theme: 'dark' })
+  await api.getAppearance()
+  await api.closePopup()
   assert.deepEqual(calls, [
     [IPC_CHANNELS.searchHistory, 'clip'],
     [IPC_CHANNELS.copyHistoryEntry, 'entry-id'],
@@ -198,7 +211,88 @@ test('renderer API exposes named history and capture operations on fixed channel
     [IPC_CHANNELS.resumeCapture],
     [IPC_CHANNELS.getCaptureStatus],
     [IPC_CHANNELS.clearHistory],
+    [IPC_CHANNELS.getSnippets, 'welcome'],
+    [IPC_CHANNELS.saveSnippet, { title: 'Welcome', content: 'Hello' }],
+    [IPC_CHANNELS.copySnippet, 'snippet-id'],
+    [IPC_CHANNELS.deleteSnippet, 'snippet-id'],
+    [IPC_CHANNELS.setSnippetPinned, 'snippet-id', true],
+    [IPC_CHANNELS.getPreferences],
+    [IPC_CHANNELS.updatePreferences, { theme: 'dark' }],
+    [IPC_CHANNELS.getAppearance],
+    [IPC_CHANNELS.closePopup],
   ])
+})
+
+test('history clear IPC uses native confirmation and cancellation preserves data', async () => {
+  const { event, BrowserWindow, trustedWebContents } = createTrustedEvent()
+  const handlers = new Map()
+  let clearCalls = 0
+  let dialogOptions
+  let notifications = 0
+  registerIpcHandlers({
+    ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+    app: { getName: () => 'ClipVault', getVersion: () => '1.0.0' },
+    BrowserWindow,
+    trustedWebContents,
+    historyStore: { clear: async () => { clearCalls += 1; return 5 } },
+    clipboardMonitor: { pause: async () => ({}), resume: async () => ({}), getStatus: () => ({ enabled: false }) },
+    clipboard: { writeText() {} },
+    dialog: {
+      showMessageBox: async (_parent, options) => {
+        dialogOptions = options
+        return { response: 0 }
+      },
+    },
+    onHistoryCleared: () => { notifications += 1 },
+  })
+
+  assert.deepEqual(await handlers.get(IPC_CHANNELS.clearHistory)(event), { cleared: false, count: 0 })
+  assert.equal(dialogOptions.type, 'warning')
+  assert.deepEqual(dialogOptions.buttons, ['Cancel', 'Clear History'])
+  assert.equal(clearCalls, 0)
+  assert.equal(notifications, 0)
+  assert.equal(isHistoryClearedPayload({ count: 0 }), true)
+  assert.equal(isHistoryClearedPayload({ count: -1 }), false)
+})
+
+test('renderer history-cleared event is validated, sanitized, and unsubscribed', () => {
+  const listeners = new Map()
+  const api = createRendererApi({
+    invoke() {},
+    on(channel, listener) { listeners.set(channel, listener) },
+    removeListener(channel) { listeners.delete(channel) },
+  })
+  const payloads = []
+  const unsubscribe = api.onHistoryCleared((payload) => payloads.push(payload))
+  const listener = listeners.get(IPC_CHANNELS.historyCleared)
+  listener({}, { count: 4, extra: true })
+  listener({}, { count: -1 })
+  unsubscribe()
+  listener({}, { count: 2 })
+
+  assert.deepEqual(payloads, [{ count: 4 }])
+  assert.equal(listeners.has(IPC_CHANNELS.historyCleared), false)
+})
+
+test('renderer appearance subscription validates and sanitizes theme changes', () => {
+  const listeners = new Map()
+  const removed = []
+  const api = createRendererApi({
+    invoke() {},
+    on(channel, listener) { listeners.set(channel, listener) },
+    removeListener(channel, listener) { removed.push([channel, listener]); listeners.delete(channel) },
+  })
+  const values = []
+  const unsubscribe = api.onAppearanceChanged((appearance) => values.push(appearance))
+  const listener = listeners.get(IPC_CHANNELS.appearanceChanged)
+  listener({}, { theme: 'dark', dark: true, extra: 'removed' })
+  listener({}, { theme: 'ultraviolet', dark: true })
+  unsubscribe()
+  listener({}, { theme: 'light', dark: false })
+
+  assert.deepEqual(values, [{ theme: 'dark', dark: true }])
+  assert.equal(isAppearancePayload({ theme: 'system', dark: false }), true)
+  assert.equal(removed.length, 1)
 })
 
 test('clipboard and capture-status event subscriptions filter and sanitize payloads', () => {

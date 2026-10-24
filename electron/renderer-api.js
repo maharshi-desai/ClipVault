@@ -1,7 +1,9 @@
 const {
   IPC_CHANNELS,
   isCaptureStatusPayload,
+  isAppearancePayload,
   isClipboardEntryPayload,
+  isHistoryClearedPayload,
   isWindowStatePayload,
 } = require('./ipc-contract')
 
@@ -34,11 +36,32 @@ function createRendererApi(ipcRenderer) {
     pauseCapture: () => ipcRenderer.invoke(IPC_CHANNELS.pauseCapture),
     resumeCapture: () => ipcRenderer.invoke(IPC_CHANNELS.resumeCapture),
     getCaptureStatus: () => ipcRenderer.invoke(IPC_CHANNELS.getCaptureStatus),
+    getSnippets: (query = '') => ipcRenderer.invoke(IPC_CHANNELS.getSnippets, query),
+    saveSnippet: (snippet) => ipcRenderer.invoke(IPC_CHANNELS.saveSnippet, snippet),
+    deleteSnippet: (id) => ipcRenderer.invoke(IPC_CHANNELS.deleteSnippet, id),
+    setSnippetPinned: (id, pinned) => ipcRenderer.invoke(IPC_CHANNELS.setSnippetPinned, id, pinned),
+    copySnippet: (id) => ipcRenderer.invoke(IPC_CHANNELS.copySnippet, id),
+    getPreferences: () => ipcRenderer.invoke(IPC_CHANNELS.getPreferences),
+    updatePreferences: (preferences) => ipcRenderer.invoke(IPC_CHANNELS.updatePreferences, preferences),
+    getAppearance: () => ipcRenderer.invoke(IPC_CHANNELS.getAppearance),
+    closePopup: () => ipcRenderer.invoke(IPC_CHANNELS.closePopup),
     onClipboardEntry: (callback) => subscribe(
       IPC_CHANNELS.clipboardEntry,
       callback,
       isClipboardEntryPayload,
       (entry) => ({ id: entry.id, text: entry.text, timestamp: entry.timestamp }),
+    ),
+    onHistoryCleared: (callback) => subscribe(
+      IPC_CHANNELS.historyCleared,
+      callback,
+      isHistoryClearedPayload,
+      (payload) => ({ count: payload.count }),
+    ),
+    onAppearanceChanged: (callback) => subscribe(
+      IPC_CHANNELS.appearanceChanged,
+      callback,
+      isAppearancePayload,
+      (appearance) => ({ theme: appearance.theme, dark: appearance.dark }),
     ),
     onCaptureStatusChanged: (callback) => subscribe(
       IPC_CHANNELS.captureStatusChanged,

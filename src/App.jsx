@@ -1,204 +1,345 @@
-import { ArrowDownUp, Archive, Check, Command, Copy, Pause, Play, Search, Settings2, Sparkles, Trash2 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Archive, Check, Command, Moon, Pause, Play, Plus, Search, Settings2, Sparkles, Sun, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import HistoryList from './components/HistoryList.jsx'
+import SettingsPanel from './components/SettingsPanel.jsx'
+import SnippetEditor from './components/SnippetEditor.jsx'
+import SnippetList from './components/SnippetList.jsx'
 
-function mergeEntries(currentEntries, incomingEntries, limit) {
-  const byId = new Map()
-  for (const entry of [...currentEntries, ...incomingEntries]) byId.set(entry.id, entry)
-  return [...byId.values()]
-    .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
-    .slice(0, limit)
-}
-
-function formatTimestamp(value) {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? 'Unknown time' : date.toLocaleString()
+function applyAppearance(appearance) {
+  if (!appearance) return
+  document.documentElement.classList.toggle('dark', appearance.dark)
+  document.documentElement.style.colorScheme = appearance.dark ? 'dark' : 'light'
 }
 
 function App() {
-  const [entries, setEntries] = useState([])
-  const [captureStatus, setCaptureStatus] = useState(null)
-  const [appInfo, setAppInfo] = useState(null)
-  const [query, setQuery] = useState('')
-  const [searchResults, setSearchResults] = useState(null)
-  const [message, setMessage] = useState('')
-  const historyLimitRef = useRef(500)
   const api = window.clipVault
+  const searchRef = useRef(null)
+  const listRef = useRef(null)
+  const historyLimitRef = useRef(500)
+  const [view, setView] = useState('history')
+  const [returnView, setReturnView] = useState('history')
+  const [history, setHistory] = useState([])
+  const [historyMatches, setHistoryMatches] = useState(null)
+  const [snippets, setSnippets] = useState([])
+  const [snippetMatches, setSnippetMatches] = useState(null)
+  const [query, setQuery] = useState('')
+  const [captureStatus, setCaptureStatus] = useState(null)
+  const [preferences, setPreferences] = useState(null)
+  const [appearance, setAppearance] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [searching, setSearching] = useState(false)
+  const [error, setError] = useState('')
+  const [toast, setToast] = useState('')
+  const [selectedIndex, setSelectedIndex] = useState(-1)
+  const [editorSnippet, setEditorSnippet] = useState(undefined)
+  const [snippetError, setSnippetError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [settingsBusy, setSettingsBusy] = useState(false)
+
+  const visibleHistory = query.trim() ? (historyMatches ?? []) : history
+  const visibleSnippets = query.trim() ? (snippetMatches ?? []) : snippets
+  const activeItems = view === 'snippets' ? visibleSnippets : visibleHistory
+
+  const refreshHistory = useCallback(async () => {
+    const items = await api.getHistory()
+    setHistory(items)
+    return items
+  }, [api])
+
+  const refreshSnippets = useCallback(async (search = '') => {
+    const items = await api.getSnippets(search)
+    if (search) setSnippetMatches(items)
+    else setSnippets(items)
+    return items
+  }, [api])
 
   useEffect(() => {
-    if (!api) return undefined
-    let active = true
-
-    const unsubscribeEntry = api.onClipboardEntry((entry) => {
-      setEntries((current) => mergeEntries(current, [entry], historyLimitRef.current))
-    })
-    const unsubscribeStatus = api.onCaptureStatusChanged((status) => {
-      historyLimitRef.current = status.historyLimit
-      setCaptureStatus(status)
-      setEntries((current) => current.slice(0, status.historyLimit))
-    })
-
-    api.getHistory().then((history) => {
-      if (active) setEntries((current) => mergeEntries(current, history, captureStatus?.historyLimit ?? 500))
-    }).catch(() => {
-      if (active) setMessage('Clipboard history could not be read from local storage.')
-    })
-    api.getCaptureStatus().then((status) => {
-      if (active) {
-        historyLimitRef.current = status.historyLimit
-        setCaptureStatus(status)
-        setEntries((current) => current.slice(0, status.historyLimit))
-      }
-    }).catch(() => {
-      if (active) setMessage('Capture status is unavailable.')
-    })
-    api.getAppInfo().then(setAppInfo).catch(() => {})
-
-    return () => {
-      active = false
-      unsubscribeEntry()
-      unsubscribeStatus()
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!api) return undefined
-    const searchText = query.trim()
-    if (!searchText) {
-      setSearchResults(null)
+    if (!api) {
+      setError('ClipVault desktop services are unavailable. Reopen the app to reconnect.')
+      setLoading(false)
       return undefined
     }
 
     let active = true
-    const timer = window.setTimeout(() => {
-      api.searchHistory(searchText).then((results) => {
-        if (active) setSearchResults(results)
-      }).catch(() => {
-        if (active) setMessage('Clipboard history search failed.')
-      })
-    }, 150)
+    const unsubscribers = [
+      api.onClipboardEntry((entry) => setHistory((items) => [entry, ...items.filter((item) => item.id !== entry.id)].slice(0, historyLimitRef.current))),
+      api.onCaptureStatusChanged((status) => setCaptureStatus(status)),
+      api.onHistoryCleared(() => {
+        setHistory([])
+        setHistoryMatches(query.trim() ? [] : null)
+      }),
+      api.onAppearanceChanged((nextAppearance) => {
+        setAppearance(nextAppearance)
+        applyAppearance(nextAppearance)
+      }),
+      api.onWindowStateChanged((state) => {
+        if (state === 'focused') searchRef.current?.focus()
+      }),
+    ]
 
+    Promise.all([
+      api.getHistory(),
+      api.getCaptureStatus(),
+      api.getPreferences(),
+      api.getAppearance(),
+      api.getSnippets(''),
+    ]).then(([nextHistory, nextStatus, nextPreferences, nextAppearance, nextSnippets]) => {
+      if (!active) return
+      setHistory(nextHistory)
+      setCaptureStatus(nextStatus)
+      setPreferences(nextPreferences)
+      historyLimitRef.current = nextPreferences.historyLimit
+      setAppearance(nextAppearance)
+      setSnippets(nextSnippets)
+      applyAppearance(nextAppearance)
+      setLoading(false)
+    }).catch(() => {
+      if (!active) return
+      setError('ClipVault could not load local data. Your saved files have not been changed.')
+      setLoading(false)
+    })
+
+    searchRef.current?.focus()
+    return () => {
+      active = false
+      unsubscribers.forEach((unsubscribe) => unsubscribe())
+    }
+  }, [api])
+
+  useEffect(() => {
+    setSelectedIndex(-1)
+  }, [view, query, visibleHistory.length, visibleSnippets.length])
+
+  useEffect(() => {
+    if (!api || !query.trim() || view === 'settings') {
+      setHistoryMatches(null)
+      setSnippetMatches(null)
+      setSearching(false)
+      return undefined
+    }
+    let active = true
+    setSearching(true)
+    const timer = window.setTimeout(async () => {
+      try {
+        if (view === 'history') {
+          const results = await api.searchHistory(query.trim())
+          if (active) setHistoryMatches(results)
+        } else {
+          const results = await api.getSnippets(query.trim())
+          if (active) setSnippetMatches(results)
+        }
+      } catch {
+        if (active) setError('Search could not be completed. Try again.')
+      } finally {
+        if (active) setSearching(false)
+      }
+    }, 120)
     return () => {
       active = false
       window.clearTimeout(timer)
     }
-  }, [query, entries])
+  }, [api, query, view, history.length, snippets.length])
 
-  const visibleEntries = query.trim() ? (searchResults ?? []) : entries
-  const platformName = appInfo?.platform === 'darwin'
-    ? 'macOS'
-    : appInfo?.platform === 'win32'
-      ? 'Windows'
-      : appInfo?.platform === 'linux'
-        ? 'Linux'
-        : appInfo?.platform
+  useEffect(() => {
+    const selected = listRef.current?.querySelector('[data-selected="true"]')
+    selected?.scrollIntoView({ block: 'nearest' })
+  }, [selectedIndex])
+
+  const copySelected = useCallback(async (item = activeItems[selectedIndex]) => {
+    if (!item || !api) return
+    setError('')
+    try {
+      const copied = view === 'snippets'
+        ? await api.copySnippet(item.id)
+        : await api.copyHistoryEntry(item.id)
+      if (!copied) throw new Error('Clip was not found')
+      setToast(view === 'snippets' ? 'Snippet copied' : 'Copied to clipboard')
+      window.setTimeout(() => setToast(''), 1600)
+    } catch {
+      setError('Could not copy this item to the clipboard.')
+    }
+  }, [activeItems, api, selectedIndex, view])
+
+  useEffect(() => {
+    function onKeyDown(event) {
+      const commandKey = event.metaKey || event.ctrlKey
+      if (commandKey && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        if (view === 'settings') setView(returnView)
+        window.requestAnimationFrame(() => searchRef.current?.focus())
+        return
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (editorSnippet !== undefined) setEditorSnippet(undefined)
+        else if (view === 'settings') setView(returnView)
+        else if (query) setQuery('')
+        else api?.closePopup().catch(() => {})
+        return
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        if (view === 'settings' || editorSnippet !== undefined || activeItems.length === 0) return
+        event.preventDefault()
+        const direction = event.key === 'ArrowDown' ? 1 : -1
+        setSelectedIndex((current) => {
+          if (current < 0) return direction > 0 ? 0 : activeItems.length - 1
+          return (current + direction + activeItems.length) % activeItems.length
+        })
+      }
+      if (event.key === 'Enter' && selectedIndex >= 0 && editorSnippet === undefined && view !== 'settings') {
+        event.preventDefault()
+        copySelected()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [activeItems.length, api, copySelected, editorSnippet, query, returnView, selectedIndex, view])
 
   async function toggleCapture() {
-    if (!api || !captureStatus) return
-    setMessage('')
+    if (!captureStatus) return
+    setError('')
     try {
-      const status = captureStatus.enabled ? await api.pauseCapture() : await api.resumeCapture()
-      setCaptureStatus(status)
+      setCaptureStatus(captureStatus.enabled ? await api.pauseCapture() : await api.resumeCapture())
     } catch {
-      setMessage('Capture setting could not be changed.')
+      setError('Capture status could not be changed.')
     }
   }
 
-  async function copyEntry(entry) {
-    setMessage('')
+  async function deleteHistoryEntry(id) {
     try {
-      const copied = await api.copyHistoryEntry(entry.id)
-      setMessage(copied ? 'Clip copied to the system clipboard.' : 'That clip is no longer in history.')
+      await api.deleteHistoryEntry(id)
+      setHistory((items) => items.filter((entry) => entry.id !== id))
+      setHistoryMatches((items) => items?.filter((entry) => entry.id !== id) ?? null)
     } catch {
-      setMessage('Clip could not be copied to the system clipboard.')
-    }
-  }
-
-  async function deleteEntry(id) {
-    setMessage('')
-    try {
-      const deleted = await api.deleteHistoryEntry(id)
-      if (deleted) {
-        setEntries((current) => current.filter((entry) => entry.id !== id))
-        setSearchResults((current) => current?.filter((entry) => entry.id !== id) ?? null)
-      }
-    } catch {
-      setMessage('Clip could not be deleted from local history.')
+      setError('This history item could not be deleted.')
     }
   }
 
   async function clearHistory() {
-    if (!api || !window.confirm('Clear all saved clipboard history? This cannot be undone.')) return
-    setMessage('')
     try {
-      await api.clearHistory()
-      setEntries([])
-      setSearchResults(query.trim() ? [] : null)
+      const result = await api.clearHistory()
+      if (result.cleared) {
+        setHistory([])
+        setHistoryMatches(query.trim() ? [] : null)
+        setToast(`${result.count} ${result.count === 1 ? 'item' : 'items'} cleared`)
+      }
     } catch {
-      setMessage('Clipboard history could not be cleared.')
+      setError('History could not be cleared.')
     }
   }
 
+  async function updatePreferences(patch) {
+    setSettingsBusy(true)
+    setError('')
+    try {
+      const result = await api.updatePreferences(patch)
+      setPreferences(result.preferences)
+      historyLimitRef.current = result.preferences.historyLimit
+      setAppearance(result.appearance)
+      applyAppearance(result.appearance)
+      setCaptureStatus(await api.getCaptureStatus())
+    } catch {
+      setError('That preference could not be saved.')
+    } finally {
+      setSettingsBusy(false)
+    }
+  }
+
+  async function saveSnippet(values) {
+    setBusy(true)
+    setSnippetError('')
+    try {
+      await api.saveSnippet(values)
+      await refreshSnippets('')
+      setSnippetMatches(null)
+      setEditorSnippet(undefined)
+      setToast('Snippet saved')
+    } catch {
+      setSnippetError('Could not save the snippet. Check the title and text, then try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function deleteSnippet(id) {
+    try {
+      await api.deleteSnippet(id)
+      await refreshSnippets('')
+      if (query.trim()) await refreshSnippets(query.trim())
+    } catch {
+      setError('This snippet could not be deleted.')
+    }
+  }
+
+  async function togglePinned(snippet) {
+    try {
+      await api.setSnippetPinned(snippet.id, !snippet.pinned)
+      await refreshSnippets('')
+      if (query.trim()) await refreshSnippets(query.trim())
+    } catch {
+      setError('Snippet pin could not be changed.')
+    }
+  }
+
+  function openSettings() {
+    setReturnView(view === 'settings' ? returnView : view)
+    setView('settings')
+    setQuery('')
+  }
+
+  const emptyStatus = useMemo(() => {
+    if (!captureStatus) return 'Checking status'
+    return captureStatus.enabled ? 'Capturing clipboard' : 'Capture is paused'
+  }, [captureStatus])
+
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto flex min-h-screen max-w-6xl">
-        <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white px-5 py-6 sm:flex">
-          <div className="mb-10 flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-indigo-600 text-white"><Archive size={19} /></div>
-            <span className="text-lg font-semibold tracking-tight">ClipVault</span>
-          </div>
-          <p className="mb-3 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Library</p>
-          <div className="flex items-center gap-3 rounded-lg bg-indigo-50 px-3 py-2.5 text-sm font-medium text-indigo-700"><Archive size={17} /> All clips <span className="ml-auto text-xs">{entries.length}</span></div>
-          <div className="mt-auto rounded-xl bg-slate-50 p-4">
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium"><Sparkles size={16} className="text-indigo-600" /> Your space</div>
-            <p className="text-xs leading-5 text-slate-500">Clipboard history stays on this device. No clipboard content is sent to a server.</p>
-          </div>
-        </aside>
+    <main className="relative flex h-screen min-h-[520px] w-full flex-col overflow-hidden rounded-[18px] border border-[var(--line)] bg-[var(--background)] text-[var(--text)] shadow-2xl">
+      <header className="flex h-[62px] shrink-0 items-center justify-between border-b border-[var(--line)] px-4">
+        <div className="flex min-w-0 items-center gap-2.5">
+          {view === 'settings' ? <button onClick={() => setView(returnView)} aria-label="Close preferences" className="rounded-lg p-1.5 text-[var(--muted)] hover:bg-[var(--surface-soft)]"><X size={16} /></button> : <div className="grid h-8 w-8 place-items-center rounded-[11px] bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-sm"><Archive size={15} /></div>}
+          <div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-[13px] font-semibold tracking-tight">{view === 'settings' ? 'Preferences' : 'ClipVault'}</p>{view !== 'settings' && <span className="rounded bg-[var(--surface-soft)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--muted)]">LOCAL</span>}</div><p className="truncate text-[10px] text-[var(--muted)]">{view === 'settings' ? 'A little more personal' : 'Your clipboard, in one place'}</p></div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {view !== 'settings' && <button onClick={toggleCapture} aria-label={captureStatus?.enabled ? 'Pause capture' : 'Resume capture'} title={emptyStatus} className={`grid h-8 w-8 place-items-center rounded-lg transition ${captureStatus?.enabled ? 'text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400' : 'text-[var(--muted)] hover:bg-[var(--surface-soft)]'}`}>{captureStatus?.enabled ? <Pause size={15} /> : <Play size={15} />}</button>}
+          {view === 'snippets' && <button onClick={() => { setSnippetError(''); setEditorSnippet(null) }} aria-label="Create snippet" title="New snippet" className="grid h-8 w-8 place-items-center rounded-lg bg-[var(--accent)] text-white hover:opacity-90"><Plus size={15} /></button>}
+          {view !== 'settings' && <button onClick={openSettings} aria-label="Open preferences" title="Preferences" className="grid h-8 w-8 place-items-center rounded-lg text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--text)]"><Settings2 size={15} /></button>}
+        </div>
+      </header>
 
-        <section className="min-w-0 flex-1 px-6 py-8 sm:px-10">
-          <header className="mb-7 flex items-start justify-between gap-4">
-            <div><p className="mb-1 text-sm text-slate-500">Your personal clipboard</p><h1 className="text-3xl font-semibold tracking-tight">ClipVault</h1></div>
-            <button aria-label="Settings" className="rounded-lg border border-slate-200 bg-white p-2.5 text-slate-500 hover:text-slate-900"><Settings2 size={18} /></button>
-          </header>
-
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-3">
-              <span className={`h-2.5 w-2.5 rounded-full ${captureStatus?.enabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-              <div>
-                <p className="text-sm font-semibold">{captureStatus ? (captureStatus.enabled ? 'Clipboard capture is on' : 'Clipboard capture is paused') : 'Checking capture status…'}</p>
-                <p className="text-xs text-slate-500">{captureStatus?.storageAvailable === false ? 'Local storage is unavailable.' : `Saved only on this device · Up to ${captureStatus?.maxClipboardTextChars ?? 25000} characters per clip`}</p>
-              </div>
+      {view === 'settings' ? (
+        <div className="flex-1 overflow-y-auto"><SettingsPanel preferences={preferences} onUpdate={updatePreferences} onBack={() => setView(returnView)} onClear={clearHistory} busy={settingsBusy} error={error} /></div>
+      ) : (
+        <>
+          <div className="shrink-0 px-4 pt-3.5">
+            <div className="mb-3 flex rounded-xl bg-[var(--surface-soft)] p-1">
+              <button onClick={() => { setView('history'); setQuery('') }} className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-[11px] font-semibold transition ${view === 'history' ? 'bg-[var(--surface)] text-[var(--text)] shadow-sm' : 'text-[var(--muted)]'}`}><Archive size={13} /> History <span className="text-[10px] opacity-60">{history.length}</span></button>
+              <button onClick={() => { setView('snippets'); setQuery('') }} className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-[11px] font-semibold transition ${view === 'snippets' ? 'bg-[var(--surface)] text-[var(--text)] shadow-sm' : 'text-[var(--muted)]'}`}><Sparkles size={13} /> Snippets <span className="text-[10px] opacity-60">{snippets.length}</span></button>
             </div>
-            <div className="flex gap-2">
-              <button onClick={toggleCapture} disabled={!captureStatus} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium disabled:opacity-50">
-                {captureStatus?.enabled ? <><Pause size={15} /> Pause capture</> : <><Play size={15} /> Resume capture</>}
-              </button>
-              <button onClick={clearHistory} className="flex items-center gap-2 rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50"><Trash2 size={15} /> Clear history</button>
+            <label className="flex h-10 items-center gap-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 transition focus-within:border-[var(--accent)] focus-within:ring-2 focus-within:ring-[var(--accent)]/10">
+              <Search size={15} className="shrink-0 text-[var(--muted)]" />
+              <input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-[var(--muted)]" placeholder={view === 'history' ? 'Search your clipboard…' : 'Search snippets…'} aria-label={view === 'history' ? 'Search clipboard history' : 'Search snippets'} />
+              {query ? <button onClick={() => setQuery('')} aria-label="Clear search" className="text-[var(--muted)] hover:text-[var(--text)]"><X size={14} /></button> : <kbd className="flex items-center gap-0.5 rounded border border-[var(--line)] px-1.5 py-1 text-[9px] text-[var(--muted)]"><Command size={9} />K</kbd>}
+            </label>
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col px-4 pt-3">
+            <div className="mb-2 flex shrink-0 items-center justify-between"><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">{query ? 'Search results' : view === 'history' ? 'Recent clips' : 'Pinned & saved'}</p>{view === 'history' && <span className="text-[10px] text-[var(--muted)]">{history.length}{preferences ? ` / ${preferences.historyLimit}` : ''}</span>}{view === 'snippets' && <button onClick={() => { setSnippetError(''); setEditorSnippet(null) }} className="text-[10px] font-medium text-[var(--accent)] hover:opacity-75">New snippet</button>}</div>
+            <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto pr-0.5">
+              {error && <div className="mb-2 flex items-start justify-between gap-3 rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-[11px] leading-4 text-rose-500" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><X size={13} /></button></div>}
+              {view === 'history' ? <HistoryList entries={visibleHistory} loading={loading || searching} query={query} selectedIndex={selectedIndex} onCopy={copySelected} onDelete={deleteHistoryEntry} /> : <SnippetList snippets={visibleSnippets} loading={loading || searching} query={query} selectedIndex={selectedIndex} onCreate={() => setEditorSnippet(null)} onCopy={copySelected} onEdit={(snippet) => { setSnippetError(''); setEditorSnippet(snippet) }} onDelete={deleteSnippet} onPin={togglePinned} />}
+              {view === 'history' && !loading && !visibleHistory.length && error && <button onClick={() => refreshHistory().catch(() => {})} className="mx-auto -mt-12 block text-xs text-[var(--accent)]">Try loading again</button>}
             </div>
           </div>
+        </>
+      )}
 
-          <p className="mb-6 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">Clipboard history may contain sensitive information. It is stored locally and is not automatically encrypted. Pause capture when you do not want new text saved.</p>
+      <footer className="flex h-[42px] shrink-0 items-center justify-between border-t border-[var(--line)] px-4 text-[10px] text-[var(--muted)]">
+        <div className="flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${captureStatus?.enabled ? 'bg-emerald-500' : 'bg-amber-500'}`} />{emptyStatus}{captureStatus?.storageAvailable === false && <span className="text-rose-500">· Storage unavailable</span>}</div>
+        <div className="flex items-center gap-2"><span>Only on this Mac</span><span className="opacity-40">·</span><span>{appearance?.dark ? <Moon size={11} /> : <Sun size={11} />}</span><button aria-label="Close ClipVault" title="Close popup" onClick={() => api?.closePopup().catch(() => {})} className="rounded p-0.5 hover:bg-[var(--surface-soft)] hover:text-[var(--text)]"><X size={13} /></button></div>
+      </footer>
 
-          <div className="mb-8 flex flex-col gap-3 sm:flex-row">
-            <label className="flex flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"><Search size={18} className="text-slate-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" placeholder="Search clipboard history..." /><kbd className="hidden items-center gap-1 rounded border border-slate-200 px-1.5 py-1 text-[10px] text-slate-400 sm:flex"><Command size={10} /> K</kbd></label>
-            <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 shadow-sm"><ArrowDownUp size={16} /> Newest first</div>
-          </div>
-
-          <div className="mb-4 flex items-center justify-between"><h2 className="text-sm font-semibold text-slate-700">{query.trim() ? 'Search results' : 'Recent clips'} <span className="ml-1 font-normal text-slate-400">{visibleEntries.length}</span></h2><span className="text-xs text-slate-400">{captureStatus ? `Limit ${captureStatus.historyLimit}` : ''}</span></div>
-          <div className="space-y-3">
-            {visibleEntries.map((entry) => <article key={entry.id} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-200 hover:shadow-sm">
-              <div className="mb-3 flex items-center justify-between"><span className="rounded-md bg-violet-100 px-2 py-1 text-[10px] font-bold tracking-wide text-violet-700">TEXT</span><time className="text-xs text-slate-400">{formatTimestamp(entry.timestamp)}</time></div>
-              <p className="max-h-32 overflow-hidden whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{entry.text}</p>
-              <div className="mt-4 flex justify-end gap-2">
-                <button onClick={() => copyEntry(entry)} className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"><Copy size={14} /> Copy</button>
-                <button onClick={() => deleteEntry(entry.id)} aria-label="Delete clip" className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50"><Trash2 size={14} /> Delete</button>
-              </div>
-            </article>)}
-            {visibleEntries.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><Check size={22} className="mx-auto mb-3 text-slate-400" /><p className="text-sm font-medium text-slate-700">{query.trim() ? 'No matching clips' : 'No clipboard history yet'}</p><p className="mt-1 text-xs text-slate-500">{query.trim() ? 'Try another search.' : 'Copy some text while capture is on to save it here.'}</p></div>}
-          </div>
-          {message && <p role="status" className="mt-5 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600">{message}</p>}
-          <footer className="mt-10 text-center text-xs text-slate-400">{appInfo ? `${appInfo.name} v${appInfo.version} · ${platformName}` : 'ClipVault · Local clipboard history'}</footer>
-        </section>
-      </div>
+      {toast && <div role="status" className="absolute bottom-12 left-1/2 z-10 -translate-x-1/2 rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-medium text-white shadow-lg dark:bg-white dark:text-slate-900"><Check size={12} className="mr-1 inline" />{toast}</div>}
+      {editorSnippet !== undefined && <SnippetEditor snippet={editorSnippet} onSave={saveSnippet} onCancel={() => setEditorSnippet(undefined)} busy={busy} error={snippetError} />}
     </main>
   )
 }

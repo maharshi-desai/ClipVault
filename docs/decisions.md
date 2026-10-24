@@ -5,5 +5,9 @@
 - **CommonJS in Electron entry files:** `main.js` and `preload.js` run directly in Electron without an extra transpilation step.
 - **Tailwind CSS 3:** configured with PostCSS for a small, explicit setup.
 - **Electron security defaults:** context isolation is on and Node integration is off; renderer receives only a small preload API.
-- **No clipboard monitoring:** deliberately deferred to a later phase.
+- **Menu bar-first interaction:** one compact popup is reused from tray and shortcut actions; closing it hides the window and leaves the tray process available.
+- **Global shortcut:** use `CommandOrControl+Shift+V`; registration failure does not prevent tray use and is shown in the tray menu/tooltip.
+- **Native clear confirmation:** clear-history requests use Electron's native warning dialog from both renderer and tray actions.
+- **Local snippets and preferences:** reusable snippets and user settings use separate JSON files under `app.getPath('userData')`; filesystem access stays in the main process.
+- **Native appearance preference:** `nativeTheme.themeSource` follows the user's system, light, or dark setting, and the validated appearance event updates the renderer root theme.
 - **macOS packaging:** electron-builder targets DMG output. Signing and notarization depend on release credentials and are not configured here.
