@@ -17,6 +17,7 @@ const IPC_CHANNELS = Object.freeze({
   getAppearance: 'clipvault:appearance:get',
   appearanceChanged: 'clipvault:appearance:changed',
   closePopup: 'clipvault:popup:close',
+  openProjectDocumentation: 'clipvault:docs:open-project',
   pauseCapture: 'clipvault:capture:pause',
   resumeCapture: 'clipvault:capture:resume',
   getCaptureStatus: 'clipvault:capture:get-status',

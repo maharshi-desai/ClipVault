@@ -88,11 +88,12 @@ test('renderer API invokes only the app info channel with no arguments', async (
   })
 
   assert.deepEqual(await api.getAppInfo(), { name: 'ClipVault' })
-  assert.deepEqual(calls, [[IPC_CHANNELS.getAppInfo]])
+  await api.openProjectDocumentation()
+  assert.deepEqual(calls, [[IPC_CHANNELS.getAppInfo], [IPC_CHANNELS.openProjectDocumentation]])
   assert.deepEqual(Object.keys(api).sort(), [
     'clearHistory', 'closePopup', 'copyHistoryEntry', 'copySnippet', 'deleteHistoryEntry', 'deleteSnippet',
     'getAppInfo', 'getAppearance', 'getCaptureStatus', 'getHistory', 'getPreferences', 'getSnippets',
-    'onAppearanceChanged', 'onCaptureStatusChanged', 'onClipboardEntry', 'onHistoryCleared', 'onWindowStateChanged',
+    'onAppearanceChanged', 'onCaptureStatusChanged', 'onClipboardEntry', 'onHistoryCleared', 'onWindowStateChanged', 'openProjectDocumentation',
     'pauseCapture', 'resumeCapture', 'saveSnippet', 'searchHistory', 'setSnippetPinned', 'updatePreferences',
   ])
 })

@@ -1,4 +1,5 @@
 const path = require('node:path')
+const { pathToFileURL } = require('node:url')
 const { IPC_CHANNELS } = require('./ipc-contract')
 const { confirmAndClearHistory } = require('./history-clear-confirmation')
 
@@ -78,6 +79,20 @@ function createMenuBarController({
     })
 
     const contents = popupWindow.webContents
+    const packagedRendererUrl = pathToFileURL(rendererPath).href
+    const developmentOrigin = new URL(devServerUrl).origin
+    contents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    contents.on('will-navigate', (event, targetUrl) => {
+      let isAllowed = targetUrl === packagedRendererUrl
+      if (isDevelopment) {
+        try {
+          isAllowed = new URL(targetUrl).origin === developmentOrigin
+        } catch {
+          isAllowed = false
+        }
+      }
+      if (!isAllowed) event.preventDefault()
+    })
     trustedWebContents.add(contents)
     popupWindow.on('closed', () => {
       trustedWebContents.delete(contents)

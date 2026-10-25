@@ -3,6 +3,7 @@ const assert = require('node:assert/strict')
 const { randomUUID } = require('node:crypto')
 const { IPC_CHANNELS } = require('../electron/ipc-contract')
 const { registerIpcHandlers } = require('../electron/ipc-handlers')
+const { PROJECT_DOCUMENTATION_URL } = require('../electron/approved-links')
 
 function setupHandlers({ preferences = { theme: 'system', historyLimit: 500, captureOnStartup: true } } = {}) {
   let currentPreferences = preferences
@@ -23,6 +24,8 @@ function setupHandlers({ preferences = { theme: 'system', historyLimit: 500, cap
     clipboardMonitor: { getStatus: () => ({ enabled: true }), pause: async () => ({}), resume: async () => ({}) },
     clipboard: { writeText: (text) => copiedText.push(text) },
     dialog: { showMessageBox: async () => ({ response: 0 }) },
+    shell: { openExternal: async (url) => { calls.push(['openExternal', url]) } },
+    notifySnippetSaved: () => calls.push(['snippet-notification']),
     snippetStore: {
       list: async (query) => { calls.push(['list', query]); return [] },
       save: async (snippet) => { calls.push(['save', snippet]); return snippet },
@@ -48,6 +51,7 @@ test('snippet and preference IPC operations validate arguments and use fixed han
   assert.deepEqual(await h.handlers.get(IPC_CHANNELS.saveSnippet)(h.event, { title: 'Greeting', content: 'Hello' }), {
     id: undefined, title: 'Greeting', content: 'Hello',
   })
+  assert.equal(h.calls.some(([kind]) => kind === 'snippet-notification'), true)
   await assert.rejects(async () => h.handlers.get(IPC_CHANNELS.saveSnippet)(h.event, { title: 'x', content: 'y', pinned: true }), /unsupported/i)
   await assert.rejects(async () => h.handlers.get(IPC_CHANNELS.saveSnippet)(h.event, { id: 'bad', title: 'x', content: 'y' }), /ID/i)
   assert.equal(await h.handlers.get(IPC_CHANNELS.copySnippet)(h.event, id), true)
@@ -67,4 +71,11 @@ test('close-popup request hides only the trusted renderer window', async () => {
   assert.equal(await h.handlers.get(IPC_CHANNELS.closePopup)(h.event), true)
   assert.equal(h.window.hideCalls, 1)
   await assert.rejects(async () => h.handlers.get(IPC_CHANNELS.closePopup)({ sender: {}, senderFrame: {} }), /untrusted renderer/)
+})
+
+test('project documentation IPC opens only the fixed approved URL', async () => {
+  const h = setupHandlers()
+  assert.equal(await h.handlers.get(IPC_CHANNELS.openProjectDocumentation)(h.event), true)
+  assert.deepEqual(h.calls.find(([kind]) => kind === 'openExternal'), ['openExternal', PROJECT_DOCUMENTATION_URL])
+  await assert.rejects(async () => h.handlers.get(IPC_CHANNELS.openProjectDocumentation)(h.event, 'https://attacker.invalid'), /arguments/i)
 })

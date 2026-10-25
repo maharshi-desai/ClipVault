@@ -22,7 +22,7 @@ The successful build emitted Vite configuration loader and PostCSS module type w
 - Main validates that requests come from a known window's main frame and rejects unexpected arguments.
 - Preload exposes only `getAppInfo()` and `onWindowStateChanged(callback)` on `window.clipVault`; raw `ipcRenderer` and Node APIs remain private.
 - Added a focus/blur subscription that validates payloads, hides the Electron event object, and returns an idempotent unsubscribe function. React cleans it up from `useEffect`.
-- Added JavaScript tests with Node's built-in test runner and updated the architecture, API map, and viva guide.
+- Added JavaScript tests with Node's built-in test runner and updated the architecture and API map.
 - `npm test` — passed: 7 tests, 0 failures. Coverage includes app-info response shape, argument rejection, sender/frame and allowlist rejection, fixed-channel invocation, event filtering, callback validation, and idempotent unsubscription.
 - `npm run build` — passed with Vite 8.3.5; generated `dist/index.html`, CSS (9.14 kB), and JS (229.28 kB). Existing Vite config-loader and PostCSS module-type warnings remain non-fatal.
 
@@ -59,3 +59,26 @@ The successful build emitted Vite configuration loader and PostCSS module type w
 - `npm test` — passed: 41 tests, 0 failures. `npm run build` — passed with Vite 8.3.5; the existing Vite config-loader and PostCSS module-type warnings remain non-fatal. Changed Electron modules passed `node --check`; `git diff --check` passed.
 - Live macOS visual check: the popup, capture status, preferences, system/light appearance controls, snippets empty state, and snippet create/delete were exercised. The first launch showed an unavailable bridge because the sandboxed preload could not load its local CommonJS API module. Disabled the preload sandbox while retaining `contextIsolation: true`, `nodeIntegration: false`, and the named contextBridge surface; after restart the renderer connected and showed the live capture status. No clipboard text capture action was manually checked in this visual pass.
 - After the preload correction, `npm test` passed again (41 tests), `npm run build` passed, and the development UI was relaunched successfully.
+
+## 2026-10-24 — Required Electron API audit
+
+- Audited the project against the required Electron APIs. Existing APIs were in use for lifecycle, popup, IPC, bridge, tray, shortcuts, menu, dialogs, clipboard and native appearance. Added missing `Notification` and `shell` features.
+- Added a generic native “Snippet saved” notification; it never includes snippet or clipboard text, clicking it shows the popup, and unsupported OS notifications do not interrupt saving.
+- Added an argument-free Preferences action that opens only the fixed approved GitHub README URL through a validated IPC handler. The renderer cannot submit arbitrary URLs.
+- Added popup protections that deny all new windows and cancel top-level navigation outside the configured Vite dev origin or exact packaged renderer file.
+- Added `docs/electron-api-checklist.md` mapping each API to its production function, purpose, user behavior and verification limits; updated the API map.
+- `npm test` — passed: 46 tests, 0 failures. `npm run build` — passed with Vite 8.3.5. `node --check` passed for changed Electron modules; `git diff --check` passed. Native OS notification delivery and external browser launch remain platform behaviors not covered by mocks.
+
+## 2026-10-24 — Phase 7: Testing, documentation, and quality audit
+
+- Reviewed the existing tests, IPC contract, renderer bridge, storage modules, tray controller, and project documentation before making changes.
+- Added regression tests that statically check the React renderer does not import Electron/Node built-ins, verify the preload only exposes the named API, and confirm repeated menu-bar initialization does not register duplicate windows/trays/shortcuts.
+- Expanded README.md with implemented features, install/dev/test/build commands, project layout, privacy and known limits. Updated architecture, decisions, and API map to reflect native notification/link handling, navigation restrictions, preload sandbox tradeoff, and test limits.
+- Added `docs/testing.md` with an unchecked macOS checklist. Prior visual checks are recorded separately; unperformed native tray, shortcut, capture, dialogs, notification, browser-link and quit checks remain unchecked.
+- `npm test` — passed: 49 tests, 0 failures.
+- `node --check electron/*.js` (loop over all Electron modules) — passed: 15 JavaScript files.
+- TypeScript-file absence check — passed; no `.ts` or `.tsx` files were found outside dependency and Git folders.
+- `npm run build` — passed with Vite 8.3.5; generated `dist/index.html`, 14.28 kB CSS, and 252.29 kB JavaScript (78.22 kB gzip).
+- `git diff --check` — passed. Linting — unavailable; `package.json` has no lint script and no configured linter.
+- Build emitted non-fatal Vite native config-loader and PostCSS module-type warnings. No source change was made to silence them because changing package module mode could affect Electron's CommonJS entry points.
+- No DMG packaging command was run. Automated tests mock native APIs; manual macOS checks are listed but remain outstanding apart from the previously recorded popup/theme/snippet visual pass.

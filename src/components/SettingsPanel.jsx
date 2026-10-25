@@ -1,4 +1,4 @@
-import { ArrowLeft, Moon, Sun, Laptop2, ShieldCheck, Trash2 } from 'lucide-react'
+import { ArrowLeft, Moon, Sun, Laptop2, ShieldCheck, Trash2, ExternalLink } from 'lucide-react'
 
 const themes = [
   { value: 'system', label: 'System', icon: Laptop2 },
@@ -6,7 +6,7 @@ const themes = [
   { value: 'dark', label: 'Dark', icon: Moon },
 ]
 
-export default function SettingsPanel({ preferences, onUpdate, onBack, onClear, busy, error }) {
+export default function SettingsPanel({ preferences, onUpdate, onBack, onClear, onOpenDocs, busy, error }) {
   if (!preferences) return <div className="grid h-64 place-items-center text-sm text-[var(--muted)]">Loading preferences…</div>
   const historyLimits = [...new Set([100, 250, 500, 1000, 2000, 5000, preferences.historyLimit])].sort((a, b) => a - b)
   return (
@@ -23,6 +23,7 @@ export default function SettingsPanel({ preferences, onUpdate, onBack, onClear, 
       <section className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3.5"><div className="mb-2 flex items-center gap-2 text-xs font-semibold"><ShieldCheck size={14} className="text-emerald-500" /> Privacy</div><label className="flex cursor-pointer items-start justify-between gap-3"><span><span className="block text-xs font-medium">Resume capture at launch</span><span className="mt-1 block text-[10px] leading-4 text-[var(--muted)]">Turn off to keep capture paused when ClipVault next opens.</span></span><input type="checkbox" checked={preferences.captureOnStartup} onChange={(event) => onUpdate({ captureOnStartup: event.target.checked })} className="mt-0.5 h-4 w-4 accent-[var(--accent)]" /></label><p className="mt-3 border-t border-[var(--line)] pt-3 text-[10px] leading-4 text-[var(--muted)]">History and snippets may contain sensitive information. They stay on this Mac in local JSON and are not automatically encrypted.</p></section>
 
       <button disabled={busy} onClick={onClear} className="flex w-full items-center justify-center gap-2 rounded-lg border border-rose-500/20 px-3 py-2.5 text-xs font-semibold text-rose-500 transition hover:bg-rose-500/10 disabled:opacity-50"><Trash2 size={14} /> Clear all history</button>
+      <button onClick={onOpenDocs} className="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--line)] px-3 py-2.5 text-xs font-medium text-[var(--muted)] transition hover:bg-[var(--surface-soft)] hover:text-[var(--text)]"><ExternalLink size={13} /> Open project documentation</button>
     </div>
   )
 }

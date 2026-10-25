@@ -1,9 +1,11 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { EventEmitter } = require('node:events')
+const path = require('node:path')
+const { pathToFileURL } = require('node:url')
 const { createMenuBarController, GLOBAL_SHORTCUT } = require('../electron/menu-bar-controller')
 
-function createHarness({ shortcutResult = true, shortcutThrows = false, dialogResponse = 1 } = {}) {
+function createHarness({ shortcutResult = true, shortcutThrows = false, dialogResponse = 1, isDevelopment = true } = {}) {
   const windows = []
   const shortcutCalls = []
   const app = { quitCalls: 0, quit() { this.quitCalls += 1 } }
@@ -28,7 +30,10 @@ function createHarness({ shortcutResult = true, shortcutThrows = false, dialogRe
     constructor(options) {
       super()
       this.options = options
-      this.webContents = { send() {}, on() {}, isDestroyed: () => false }
+      this.webContents = new EventEmitter()
+      this.webContents.send = () => {}
+      this.webContents.isDestroyed = () => false
+      this.webContents.setWindowOpenHandler = (handler) => { this.webContents.windowOpenHandler = handler }
       this.position = null
       this.visible = false
       this.focusCalls = 0
@@ -77,7 +82,7 @@ function createHarness({ shortcutResult = true, shortcutThrows = false, dialogRe
     clipboardMonitor: capture,
     historyStore,
     trustedWebContents,
-    isDevelopment: true,
+    isDevelopment,
     devServerUrl: 'http://127.0.0.1:5173',
     platform: 'darwin',
     onHistoryCleared: (result) => events.push(result),
@@ -114,6 +119,18 @@ test('tray popup is a singleton, focuses and repositions, and close hides it', (
   window.emit('close', { preventDefault() { prevented = true } })
   assert.equal(prevented, true)
   assert.equal(window.visible, false)
+  h.controller.dispose()
+})
+
+test('repeated controller initialization does not create duplicate windows, trays, or shortcuts', () => {
+  const h = createHarness()
+  const initialWindow = h.controller.initialize()
+  const initialTray = h.controller.getTray()
+
+  assert.equal(h.controller.initialize(), initialWindow)
+  assert.equal(h.controller.getTray(), initialTray)
+  assert.equal(h.windows.length, 1)
+  assert.equal(h.shortcutCalls.filter(([action]) => action === 'register').length, 1)
   h.controller.dispose()
 })
 
@@ -157,6 +174,36 @@ test('shortcut registration false or throwing is handled and surfaced in tray', 
     assert.equal(h.controller.getTray().menu.items[0].label, 'Show ClipVault (keyboard shortcut unavailable)')
     h.controller.dispose()
   }
+})
+
+test('popup blocks new windows and navigation outside the app origin', () => {
+  const h = createHarness()
+  h.controller.initialize()
+  const contents = h.controller.getPopupWindow().webContents
+  assert.deepEqual(contents.windowOpenHandler({ url: 'https://untrusted.example' }), { action: 'deny' })
+
+  let externalNavigationPrevented = false
+  contents.emit('will-navigate', { preventDefault() { externalNavigationPrevented = true } }, 'https://untrusted.example')
+  assert.equal(externalNavigationPrevented, true)
+
+  let appNavigationPrevented = false
+  contents.emit('will-navigate', { preventDefault() { appNavigationPrevented = true } }, 'http://127.0.0.1:5173/')
+  assert.equal(appNavigationPrevented, false)
+  h.controller.dispose()
+})
+
+test('packaged popup allows only its configured renderer file', () => {
+  const h = createHarness({ isDevelopment: false })
+  h.controller.initialize()
+  const contents = h.controller.getPopupWindow().webContents
+  const allowedUrl = pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html')).href
+  let prevented = false
+  contents.emit('will-navigate', { preventDefault() { prevented = true } }, allowedUrl)
+  assert.equal(prevented, false)
+
+  contents.emit('will-navigate', { preventDefault() { prevented = true } }, 'https://untrusted.example')
+  assert.equal(prevented, true)
+  h.controller.dispose()
 })
 
 test('tray clear action asks for native confirmation and reports completed clears', async () => {

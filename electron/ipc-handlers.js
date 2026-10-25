@@ -2,6 +2,7 @@ const { IPC_CHANNELS, isTrustedMainFrameEvent } = require('./ipc-contract')
 const { confirmAndClearHistory } = require('./history-clear-confirmation')
 const { THEMES, isValidHistoryLimit } = require('./preferences-store')
 const { MAX_CONTENT_CHARS, MAX_TITLE_CHARS } = require('./snippet-store')
+const { PROJECT_DOCUMENTATION_URL } = require('./approved-links')
 
 function createGetAppInfoHandler({ app, BrowserWindow, platform, trustedWebContents }) {
   return (event, ...args) => {
@@ -38,6 +39,8 @@ function registerIpcHandlers({
   clipboardMonitor,
   clipboard,
   dialog,
+  shell,
+  notifySnippetSaved = () => {},
   onHistoryCleared = () => {},
   snippetStore,
   preferencesStore,
@@ -111,7 +114,7 @@ function registerIpcHandlers({
     return snippetStore.list(query)
   })
 
-  register(IPC_CHANNELS.saveSnippet, (...args) => {
+  register(IPC_CHANNELS.saveSnippet, async (...args) => {
     assertArgumentCount(args, 1, 'saveSnippet')
     const [snippet] = args
     if (!snippet || typeof snippet !== 'object' || Array.isArray(snippet)) throw new TypeError('Snippet is invalid.')
@@ -122,7 +125,9 @@ function registerIpcHandlers({
       typeof snippet.title !== 'string' || snippet.title.trim().length === 0 || snippet.title.length > MAX_TITLE_CHARS ||
       typeof snippet.content !== 'string' || snippet.content.trim().length === 0 || snippet.content.length > MAX_CONTENT_CHARS
     ) throw new TypeError('Snippet title or content is invalid.')
-    return snippetStore.save({ id: snippet.id, title: snippet.title, content: snippet.content })
+    const savedSnippet = await snippetStore.save({ id: snippet.id, title: snippet.title, content: snippet.content })
+    notifySnippetSaved()
+    return savedSnippet
   })
 
   register(IPC_CHANNELS.deleteSnippet, (...args) => {
@@ -178,6 +183,12 @@ function registerIpcHandlers({
   registerWithEvent(IPC_CHANNELS.closePopup, (event, ...args) => {
     assertArgumentCount(args, 0, 'closePopup')
     BrowserWindow.fromWebContents(event.sender)?.hide()
+    return true
+  })
+
+  register(IPC_CHANNELS.openProjectDocumentation, async (...args) => {
+    assertArgumentCount(args, 0, 'openProjectDocumentation')
+    await shell.openExternal(PROJECT_DOCUMENTATION_URL)
     return true
   })
 

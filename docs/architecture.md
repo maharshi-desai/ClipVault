@@ -1,6 +1,6 @@
 # Architecture
 
-ClipVault is split into a renderer and a desktop shell. Clipboard text is read and stored by the Electron main process; the renderer receives only the history operations and events exposed by the preload bridge.
+ClipVault is split into a React renderer and an Electron desktop shell. Clipboard text is read, filtered, and stored by the Electron main process; the renderer receives only history operations and sanitized events exposed by the preload bridge. The main process also owns snippets, preferences, tray/popup lifecycle, native dialogs/notifications/theme, and the approved external documentation link.
 
 - **Renderer (`src/`)**: React components and JSX are built by Vite. Tailwind utilities are processed by PostCSS.
 - **Main process (`electron/main.js`)**: establishes a single app instance, initializes history and clipboard capture, creates the menu bar controller, and registers IPC handlers.
@@ -11,9 +11,9 @@ ClipVault is split into a renderer and a desktop shell. Clipboard text is read a
 - **Snippet store (`electron/snippet-store.js`)**: supports local create/edit/search/pin/delete for reusable text snippets in a separate JSON file.
 - **Preferences store (`electron/preferences-store.js`)**: persists theme, history limit, and whether capture resumes automatically on next launch.
 - **Preload (`electron/preload.js`)**: exposes a deliberately small `window.clipVault` API through Electron's `contextBridge`.
-- **Build/package**: `npm run build` creates the frontend in `dist/`; electron-builder packages the app as a macOS DMG using `npm run dist:mac`.
+- **Build/package**: `npm run build` creates the frontend in `dist/`. A `dist:mac` electron-builder script is configured, but installer packaging is not part of the current quality audit.
 
-The renderer has no direct Node.js or filesystem access (`nodeIntegration: false`). Context isolation is enabled. Clipboard data stays local; the app does not send clipboard contents to a remote service. Local JSON history is not automatically encrypted. Clipboard history may contain sensitive information, so the UI clearly shows capture status, pause/resume controls, and a clear-history action.
+The renderer has no direct Node.js or filesystem access (`nodeIntegration: false`). Context isolation is enabled. The popup denies new windows and external top-level navigation. Clipboard data stays local; it is not sent to a remote service or logged. Local JSON history is not automatically encrypted. Clipboard history may contain sensitive information, so the UI shows capture status, pause/resume, and clear-history controls.
 
 ## Request-response and event flow
 
@@ -29,7 +29,7 @@ The renderer has no direct Node.js or filesystem access (`nodeIntegration: false
 2. The tray click and registered `CommandOrControl+Shift+V` shortcut call the same toggle function. It reuses the existing popup, positions it beneath the tray inside the active display's work area, then shows and focuses it.
 3. Clicking outside the popup or pressing Escape hides it. The window's close event is prevented and hides the popup, so closing the UI does not quit the tray app. A single-instance lock prevents a second application process from creating another popup.
 4. The tray menu pauses/resumes the clipboard monitor, clears history only after `dialog.showMessageBox` confirmation, or requests app quit. Shortcut registration failure is caught and made visible in the tray tooltip/menu.
-5. On quit, main permits the window to close, destroys the tray, unregisters the shortcut, waits for the clipboard monitor to stop, and unregisters all global shortcuts at `will-quit`. macOS `activate` shows the existing popup again.
+5. On quit, main permits the window to close, destroys the tray, unregisters the shortcut, waits for the clipboard monitor to stop, and unregisters all global shortcuts at `will-quit`. macOS `activate` shows the existing popup again. A failed shortcut registration is surfaced in the tray label/tooltip.
 
 ## Clipboard-to-renderer data flow
 
@@ -48,7 +48,7 @@ The renderer has no direct Node.js or filesystem access (`nodeIntegration: false
 4. Theme preference updates set `nativeTheme.themeSource` to `system`, `light`, or `dark`. The main process returns effective dark mode and broadcasts appearance changes when the OS theme changes; the renderer applies the mode to the document root.
 5. History-limit changes truncate oldest entries when necessary. The automatic-resume privacy preference is used on the next app launch.
 
-The defaults are in `electron/config.js`: 1,000 ms polling, a 500-item history cap, and a 25,000-character maximum per text entry. They can be adjusted with `CLIPVAULT_POLL_INTERVAL_MS`, `CLIPVAULT_HISTORY_LIMIT`, and `CLIPVAULT_MAX_TEXT_CHARS` environment variables, subject to safety caps.
+The defaults are in `electron/config.js`: 1,000 ms polling, a 500-item history cap, and a 25,000-character maximum per text entry. They can be adjusted with `CLIPVAULT_POLL_INTERVAL_MS`, `CLIPVAULT_HISTORY_LIMIT`, and `CLIPVAULT_MAX_TEXT_CHARS` environment variables, subject to safety caps. The UI supports its listed history-limit choices and persists theme/capture-on-startup preferences.
 
 The IPC channel names and state payload check live in `electron/ipc-contract.js`; the request handler and sender validation are in `electron/ipc-handlers.js`; the limited renderer-facing methods are assembled in `electron/renderer-api.js` and exposed by `electron/preload.js`.
 
@@ -82,4 +82,8 @@ The IPC channel names and state payload check live in `electron/ipc-contract.js`
 | `src/App.jsx` | Renderer state, API subscriptions, search, keyboard controls, appearance and screen switching |
 | `src/index.css` | Tailwind layers and global page defaults |
 | `tests/` | Node built-in tests for IPC, storage, capture, tray/popup/shortcut behavior and quit cleanup |
-| `docs/` | Development record, architecture, API boundary, decisions, and viva explanation |
+| `docs/` | Development record, API map/checklist, decisions, and manual testing checklist |
+
+## Security caveat and verification limits
+
+The popup uses `contextIsolation: true` and `nodeIntegration: false`. `sandbox: false` is currently set because `electron/preload.js` loads the small local CommonJS `renderer-api.js` module; this relaxes Electron's preload sandbox defense-in-depth. The bridge remains limited and no raw IPC or filesystem API is exposed. Automated tests mock Electron and cannot prove native macOS menu bar, notification delivery, shortcut ownership, dialogs, clipboard integration, or external-browser behavior. See [`testing.md`](./testing.md) for the manual checklist. Local JSON files are not encrypted.

@@ -2,7 +2,7 @@
   "name": "clipvault",
   "version": "1.0.0",
   "private": true,
-  "description": "A simple desktop app starter built with React, Vite, and Electron.",
+  "description": "A local-first menu bar clipboard manager built with React and Electron.",
   "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",

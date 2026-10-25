@@ -1,89 +1,61 @@
 # ClipVault
 
-ClipVault is a menu bar-first clipboard utility built with React, Vite, JavaScript/JSX, Tailwind CSS, and Electron. It provides searchable clipboard history, reusable pinned snippets, appearance/settings controls, and local-only storage.
+ClipVault is a menu bar-first macOS clipboard utility built with Electron, React, Vite, JavaScript/JSX, and Tailwind CSS. Clipboard monitoring, history, snippets, and preferences run locally on the device.
 
-## Requirements
+## Implemented
 
-- Node.js and npm
-- macOS for building the configured DMG installer
+- Searchable clipboard history with copy, delete, and confirmed clear actions.
+- One-second clipboard polling by default, pause/resume controls, startup/resume baselines, and a 500-entry default limit. Empty and oversized text is ignored; exact duplicates already in history are skipped.
+- Persistent reusable snippets with create, edit, search, pin, copy, and delete operations.
+- A compact popup, menu bar tray, global shortcut (`Command+Shift+V` on macOS), focus and hide behavior, and shortcut-registration failure handling.
+- Light, dark, and system appearance settings; capture-on-startup and history-limit preferences.
+- Generic native snippet-saved notifications and a fixed project-documentation link.
+- Validated IPC, a limited `window.clipVault` preload API, isolated renderer, and local JSON storage with atomic replacement.
 
-## Getting started
+## Requirements and setup
 
-Install dependencies:
+Use a current Node.js release supported by the installed Vite and Electron versions, plus npm. Native menu bar, dialog, notification, and shortcut behavior requires a desktop session. macOS-specific behavior must be checked on macOS.
 
 ```sh
 npm install
-```
-
-Start the Vite server and menu bar application together:
-
-```sh
 npm run dev
 ```
 
-Build the renderer for production:
-
-```sh
-npm run build
-```
-
-Run the JavaScript test suite:
+Run the JavaScript test suite and build the production renderer:
 
 ```sh
 npm test
+npm run build
 ```
 
-Package the app as a macOS DMG:
+`npm run build` writes the Vite frontend to `dist/`. `npm run dev` starts Vite and launches Electron after the development server is available. Open the app through Electron; opening the Vite URL in a regular browser does not provide the preload API and will show a desktop-services error.
 
-```sh
-npm run dist:mac
-```
+The `dist:mac` packaging script is configured, but installer packaging, signing, and notarization are outside the current quality-audit phase and are not verified here.
 
-The frontend build is written to `dist/`. DMG output is written to `release/`. Signing and notarization are not configured and require release credentials.
+## Privacy and storage
+
+Clipboard history can contain sensitive information. It is saved as local JSON under Electron's `userData` directory and is **not automatically encrypted**. ClipVault does not send clipboard data to a remote server and does not log clipboard text. Pause capture when needed, disable capture on startup in settings, or clear the history. Snippets and preferences are also stored locally.
+
+Defaults are a 1,000 ms polling interval, 500 history entries, and a 25,000-character per-item limit. The main-process values can be adjusted with `CLIPVAULT_POLL_INTERVAL_MS`, `CLIPVAULT_HISTORY_LIMIT`, and `CLIPVAULT_MAX_TEXT_CHARS` (bounded by safety caps).
 
 ## Project structure
 
 ```text
-electron/       Electron main process and preload bridge
-src/            React renderer, styles, and feature folders
-docs/           Architecture, development notes, decisions, and viva guide
-index.html      Vite HTML entry point
+electron/       Electron main process, IPC, stores, preload, tray and lifecycle
+src/            React JSX interface and Tailwind styles
+tests/          Node built-in JavaScript tests
+docs/           Architecture, decisions, API map, development log and test checklist
+index.html      Vite renderer entry
 vite.config.js  Vite and React configuration
-tailwind.config.js
-postcss.config.js
+package.json    Dependencies, commands and Electron Builder configuration
 ```
 
-### Important files
+Important modules include `electron/main.js` (application composition), `electron/menu-bar-controller.js` (tray and popup), `electron/preload.js` and `electron/renderer-api.js` (secure renderer capabilities), `electron/ipc-handlers.js` (validated requests), `electron/clipboard-monitor.js` (capture), and the history/snippet/preferences stores. React views live in `src/App.jsx` and `src/components/`.
 
-- `electron/main.js` creates the desktop window and loads the Vite server in development or `dist/index.html` in production.
-- `electron/menu-bar-controller.js` owns the singleton popup, menu bar tray, popup placement, global shortcut, tray actions, and close-to-hide behavior.
-- `electron/assets/clipvault-template.png` is the monochrome macOS template image used by the system menu bar.
-- `electron/app-lifecycle.js` stops clipboard capture and unregisters shortcuts on quit.
-- `electron/preload.js` exposes the narrow `window.clipVault` API to the renderer.
-- `electron/clipboard-monitor.js` polls the system clipboard, maintains the startup/resume baseline, and supports pause/resume.
-- `electron/clipboard-history-store.js` searches and mutates the JSON history under Electron's user data folder.
-- `electron/snippet-store.js` saves and searches pinned reusable snippets locally.
-- `electron/preferences-store.js` persists theme, history limit, and capture-on-launch preference.
-- `electron/ipc-handlers.js` validates named renderer requests and performs clipboard, storage, settings, and appearance work in main.
-- `src/components/HistoryList.jsx`, `SnippetList.jsx`, `SnippetEditor.jsx`, and `SettingsPanel.jsx` keep the focused JSX views easy to follow.
-- `electron/config.js` holds capture interval, history count, and clipboard-text limits.
-- `src/main.jsx` mounts React and loads the global stylesheet.
-- `src/App.jsx` displays history and provides search, copy, delete, clear, and capture controls.
-- `src/index.css` includes Tailwind layers and global page defaults.
-- `package.json` defines dependencies, npm scripts, and electron-builder's DMG target.
+See [architecture](docs/architecture.md), [Electron API map](docs/electron-api-map.md), [decisions](docs/decisions.md), [testing checklist](docs/testing.md), and [development log](docs/development-log.md).
 
-## Electron security
+## Security and current limitations
 
-The renderer runs with `contextIsolation: true` and `nodeIntegration: false`. Renderer code does not import Node.js or Electron APIs directly. Add future desktop capabilities through a narrow preload API and matching main-process handlers.
+Context isolation is enabled and Node integration is disabled. Renderer code uses only the named preload API; main-process handlers validate the sender frame and arguments. External navigation is restricted and the documentation action accepts no user-supplied URL. The preload currently uses `sandbox: false` because it imports the local CommonJS API module; this is a defense-in-depth limitation documented in the architecture and decisions.
 
-## Menu bar behavior
-
-ClipVault starts with one compact popup and a menu bar icon. Click the icon or press **Command+Shift+V** on macOS to toggle the popup. Clicking outside it or pressing Escape hides it; closing the window also hides it while keeping the tray app running. The tray menu provides Show, Pause/Resume Capture, Clear History, and Quit. If the global shortcut is already taken, the app stays available from the tray and labels the shortcut as unavailable. Clearing history uses a native confirmation dialog.
-
-## Privacy and scope
-
-Clipboard history may contain sensitive information. It is stored locally as JSON and is not automatically encrypted. The interface displays capture status and provides pause/resume and clear-history controls. Clipboard content is not sent to a remote server.
-
-Capture defaults to a one-second polling interval, 500 history entries, and a 25,000-character text limit. The settings view can choose a history cap, select light/dark/system appearance, and control whether capture resumes on the next launch. You can override the initial capture defaults with `CLIPVAULT_POLL_INTERVAL_MS`, `CLIPVAULT_HISTORY_LIMIT`, and `CLIPVAULT_MAX_TEXT_CHARS`.
-
-For development details and the architecture overview, see [`docs/development-log.md`](docs/development-log.md), [`docs/architecture.md`](docs/architecture.md), and [`docs/viva-guide.md`](docs/viva-guide.md).
+Automated Electron tests mock native APIs and cannot prove macOS delivery/behavior. Use [docs/testing.md](docs/testing.md) to verify the actual desktop app. There is no configured lint script or linter. Clipboard history and preferences are not encrypted at rest. No remote sync, rich clipboard formats, image capture, or cloud backup is implemented.

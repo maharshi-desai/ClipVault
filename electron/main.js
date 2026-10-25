@@ -7,6 +7,8 @@ const {
   globalShortcut,
   screen,
   dialog,
+  Notification,
+  shell,
   nativeTheme,
   clipboard,
   ipcMain,
@@ -20,6 +22,7 @@ const { createMenuBarController } = require('./menu-bar-controller')
 const { installAppQuitLifecycle } = require('./app-lifecycle')
 const { PreferencesStore } = require('./preferences-store')
 const { SnippetStore } = require('./snippet-store')
+const { createNativeNotifications } = require('./native-notifications')
 const { HISTORY_LIMIT, MAX_CLIPBOARD_TEXT_CHARS, POLL_INTERVAL_MS } = require('./config')
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
@@ -97,6 +100,11 @@ if (!hasSingleInstanceLock) {
       },
     })
 
+    const notifications = createNativeNotifications({
+      Notification,
+      onSnippetSaved: () => menuBarController?.showPopup(),
+    })
+
     registerIpcHandlers({
       ipcMain,
       app,
@@ -106,6 +114,8 @@ if (!hasSingleInstanceLock) {
       clipboardMonitor,
       clipboard,
       dialog,
+      shell,
+      notifySnippetSaved: notifications.showSnippetSaved,
       snippetStore,
       preferencesStore,
       onHistoryCleared: (result) => {

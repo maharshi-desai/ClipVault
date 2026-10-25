@@ -245,6 +245,14 @@ function App() {
     }
   }
 
+  async function openProjectDocumentation() {
+    try {
+      await api.openProjectDocumentation()
+    } catch {
+      setError('Project documentation could not be opened.')
+    }
+  }
+
   async function saveSnippet(values) {
     setBusy(true)
     setSnippetError('')
@@ -307,7 +315,7 @@ function App() {
       </header>
 
       {view === 'settings' ? (
-        <div className="flex-1 overflow-y-auto"><SettingsPanel preferences={preferences} onUpdate={updatePreferences} onBack={() => setView(returnView)} onClear={clearHistory} busy={settingsBusy} error={error} /></div>
+        <div className="flex-1 overflow-y-auto"><SettingsPanel preferences={preferences} onUpdate={updatePreferences} onBack={() => setView(returnView)} onClear={clearHistory} onOpenDocs={openProjectDocumentation} busy={settingsBusy} error={error} /></div>
       ) : (
         <>
           <div className="shrink-0 px-4 pt-3.5">

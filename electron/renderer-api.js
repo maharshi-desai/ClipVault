@@ -45,6 +45,7 @@ function createRendererApi(ipcRenderer) {
     updatePreferences: (preferences) => ipcRenderer.invoke(IPC_CHANNELS.updatePreferences, preferences),
     getAppearance: () => ipcRenderer.invoke(IPC_CHANNELS.getAppearance),
     closePopup: () => ipcRenderer.invoke(IPC_CHANNELS.closePopup),
+    openProjectDocumentation: () => ipcRenderer.invoke(IPC_CHANNELS.openProjectDocumentation),
     onClipboardEntry: (callback) => subscribe(
       IPC_CHANNELS.clipboardEntry,
       callback,
