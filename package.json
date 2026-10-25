@@ -9,19 +9,21 @@
     "build": "vite build",
     "test": "node --test",
     "start": "electron .",
-    "dist:mac": "npm run build && electron-builder --mac dmg"
+    "dist:mac": "npm run build && electron-builder --mac dmg --arm64"
   },
   "build": {
     "appId": "com.clipvault.desktop",
     "productName": "ClipVault",
     "directories": { "output": "release" },
     "files": ["dist/**/*", "electron/**/*", "package.json"],
-    "mac": { "target": ["dmg"] }
-  },
-  "dependencies": {
-    "react": "latest",
-    "react-dom": "latest",
-    "lucide-react": "latest"
+    "mac": {
+      "target": ["dmg"],
+      "icon": "electron/assets/clipvault.icns",
+      "category": "public.app-category.productivity"
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
   },
   "devDependencies": {
 	"@vitejs/plugin-react": "latest",
@@ -30,7 +32,10 @@
     "concurrently": "latest",
     "electron": "latest",
     "electron-builder": "latest",
+    "lucide-react": "latest",
     "postcss": "latest",
+    "react": "latest",
+    "react-dom": "latest",
     "tailwindcss": "^3.4.17",
     "wait-on": "latest"
   }

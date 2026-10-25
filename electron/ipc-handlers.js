@@ -85,7 +85,7 @@ function registerIpcHandlers({
     if (!validateEntryId(id)) throw new TypeError('Clipboard entry ID is invalid.')
     const entry = await historyStore.getById(id)
     if (!entry) return false
-    clipboard.writeText(entry.text)
+    await clipboard.writeText(entry.text)
     return true
   })
 
@@ -142,7 +142,7 @@ function registerIpcHandlers({
     if (!validateEntryId(id)) throw new TypeError('Snippet ID is invalid.')
     const snippet = await snippetStore.getById(id)
     if (!snippet) return false
-    clipboard.writeText(snippet.content)
+    await clipboard.writeText(snippet.content)
     return true
   })
 

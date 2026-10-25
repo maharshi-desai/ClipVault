@@ -30,7 +30,13 @@ npm run build
 
 `npm run build` writes the Vite frontend to `dist/`. `npm run dev` starts Vite and launches Electron after the development server is available. Open the app through Electron; opening the Vite URL in a regular browser does not provide the preload API and will show a desktop-services error.
 
-The `dist:mac` packaging script is configured, but installer packaging, signing, and notarization are outside the current quality-audit phase and are not verified here.
+The release command builds an Apple Silicon DMG:
+
+```sh
+CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:mac
+```
+
+It runs the Vite build and `electron-builder --mac dmg --arm64`. The app bundle uses identifier `com.clipvault.desktop`, version `1.0.0`, and the macOS icon at `electron/assets/clipvault.icns`. The tested artifact is `release/ClipVault-1.0.0-arm64.dmg`. It is unsigned and not notarized; Gatekeeper assessment rejects it, so it is suitable for local verification but not ready for friction-free public distribution. Intel Macs are not supported by this arm64 artifact. See [`docs/development-log.md`](docs/development-log.md) for the measured artifact size and release checks.
 
 ## Privacy and storage
 

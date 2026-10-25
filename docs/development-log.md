@@ -16,6 +16,19 @@
 
 The successful build emitted Vite configuration loader and PostCSS module type warnings. They did not prevent the build. No DMG was created because this phase requested a frontend production build, not a packaged installer.
 
+## 2026-10-25 — Phase 8: macOS packaging and release verification
+
+- Confirmed the production Electron entry is `electron/main.js`, preload is `electron/preload.js`, packaged mode loads `dist/index.html`, Vite emits to `dist/`, and electron-builder writes artifacts to `release/`. The host is macOS 26.5.2 on Apple Silicon arm64.
+- Added a vector `electron/assets/clipvault-icon.svg` source and generated `electron/assets/clipvault.icns` for the app bundle. Kept the existing monochrome 36×36 tray template asset separate.
+- Configured the app icon/category and explicit arm64 DMG command. Moved React, React DOM, and Lucide to development dependencies because their code is bundled into `dist/`; the Electron main process has no third-party production dependencies. Electron runtime/framework files remain included.
+- Exact packaging command: `CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:mac` (runs `npm run build`, then `electron-builder --mac dmg --arm64`). Renderer build passed with Vite 8.3.5; final `npm test` passed with 52 tests and 0 failures.
+- Generated `release/ClipVault-1.0.0-arm64.dmg`; exact final size 122,753,527 bytes (122.75 MB / 117.07 MiB). SHA-256: `64e0001e30c342140327be8da883fb5237a15e033a889948bdea7519b593bcd5`.
+- `hdiutil verify` passed; the DMG mounted and contained `ClipVault.app` plus the Applications alias. The arm64 executable and app metadata (`com.clipvault.desktop`, version 1.0.0) were checked. The app was launched from the mounted DMG; its packaged `app.asar/dist/index.html` renderer loaded and displayed capture status. A synthetic clipboard change was captured and displayed in history; the UI was paused/resumed; a clipboard value set while paused was not captured after resuming; confirmed native clear removed the test entries. Test history was cleared and the original System theme/capture-on-startup preferences were restored. Quit through the macOS app lifecycle exited the process.
+- App bundle size is 254 MB; `app.asar` is 1.3 MB and contains `dist/`, Electron source, and `package.json`, with no `node_modules` runtime dependency tree. Tests, docs, and development tools are excluded from the packaged ASAR. Electron frameworks/helpers remain present.
+- Signing was explicitly disabled with `CSC_IDENTITY_AUTO_DISCOVERY=false`. The app is not Developer ID signed or notarized. `spctl --assess --type execute` rejected the bundle (`code has no resources but signature indicates they must be present`); downloaded copies may receive Gatekeeper warnings. Do not distribute publicly until signed and notarized with the appropriate Apple credentials.
+- Build warnings remain: Vite config-loader ESM/CommonJS warning, PostCSS module-type warning, and electron-builder's optional package-author warning. They did not fail packaging. No secrets or signing credentials were used.
+- The first live capture probe exposed a compatibility defect: Electron 45's `clipboard.readText()` now returns a Promise, but the monitor treated it as a synchronous string. Changed clipboard baseline, polling, and resume to await reads, and made copy handlers await `clipboard.writeText()`. Added async API regression tests; final package capture worked. Tray/menu, global shortcut, popup hide/reposition, search/copy/delete, snippets, theme switching, notifications, and shell link behavior remain for manual checklist execution. No Google Drive upload was performed.
+
 ## 2026-10-23 — Secure Electron communication
 
 - Added a fixed app-info request channel implemented with `ipcMain.handle` and `ipcRenderer.invoke`.

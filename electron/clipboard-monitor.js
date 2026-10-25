@@ -57,7 +57,7 @@ class ClipboardMonitor {
 
   async start() {
     if (this.enabled) return this.getStatus()
-    this.lastText = this.readClipboardText()
+    this.lastText = await this.readClipboardText()
     this.hasBaseline = typeof this.lastText === 'string'
     this.enabled = true
     this.schedulePolling()
@@ -77,7 +77,7 @@ class ClipboardMonitor {
   async resume() {
     if (this.enabled) return this.getStatus()
     await this.pendingPoll
-    this.lastText = this.readClipboardText()
+    this.lastText = await this.readClipboardText()
     this.hasBaseline = typeof this.lastText === 'string'
     this.enabled = true
     this.schedulePolling()
@@ -97,9 +97,9 @@ class ClipboardMonitor {
     this.timer = null
   }
 
-  readClipboardText() {
+  async readClipboardText() {
     try {
-      const value = this.clipboard.readText()
+      const value = await this.clipboard.readText()
       return typeof value === 'string' ? value : null
     } catch {
       return null
@@ -119,7 +119,7 @@ class ClipboardMonitor {
   }
 
   async captureChangedText() {
-    const text = this.readClipboardText()
+    const text = await this.readClipboardText()
     if (!this.enabled || typeof text !== 'string') return
     if (!this.hasBaseline) {
       this.lastText = text

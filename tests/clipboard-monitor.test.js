@@ -50,6 +50,35 @@ test('startup baseline is not recorded and changed text is captured once', async
   ])
 })
 
+test('asynchronous Electron clipboard reads establish baselines and capture changes', async () => {
+  const { clipboard, entries, monitor } = createMonitor('startup baseline')
+  const readText = clipboard.readText.bind(clipboard)
+  clipboard.readText = async () => readText()
+
+  await monitor.start()
+  clipboard.text = 'async'
+  await monitor.poll()
+
+  assert.equal(entries[0].text, 'async')
+})
+
+test('asynchronous clipboard resume resets its baseline after paused content', async () => {
+  const { clipboard, entries, monitor } = createMonitor('startup baseline')
+  const readText = clipboard.readText.bind(clipboard)
+  clipboard.readText = async () => readText()
+
+  await monitor.start()
+  await monitor.pause()
+  clipboard.text = 'copied while paused'
+  await monitor.resume()
+  await monitor.poll()
+  assert.deepEqual(entries, [])
+
+  clipboard.text = 'resumed'
+  await monitor.poll()
+  assert.equal(entries[0].text, 'resumed')
+})
+
 test('a failed initial clipboard read establishes a baseline before capture begins', async () => {
   const { clipboard, entries, monitor } = createMonitor('already on clipboard')
   const readText = clipboard.readText.bind(clipboard)

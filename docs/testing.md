@@ -15,6 +15,18 @@ The suite covers clipboard history add/search/duplicate/limit/delete/clear, empt
 
 `npm test` is not a substitute for running the Electron app. `npm run build` builds the React renderer only; it does not package a macOS installer.
 
+## Packaged release smoke checks
+
+For a local arm64 release check, run:
+
+```sh
+CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist:mac
+hdiutil verify release/ClipVault-1.0.0-arm64.dmg
+hdiutil attach -readonly -nobrowse release/ClipVault-1.0.0-arm64.dmg
+```
+
+The current artifact was mounted and launched from its mounted volume. Its window loaded the packaged `file://.../Contents/Resources/app.asar/dist/index.html` UI and displayed the capture status. A synthetic text change was captured in the packaged UI and persisted. Pause/resume and the fresh baseline after a paused clipboard change were exercised. The native clear-history dialog was confirmed and removed the generated test entries. Quit was sent through the macOS application lifecycle and the process exited. Tray menu, global shortcut, popup hiding/repositioning, search/copy/delete, snippets, theme switching, notification delivery, and external browser behavior still require manual checks.
+
 ## Manual macOS checklist
 
 Run `npm run dev` from a logged-in macOS desktop session and test in the Electron popup. Opening `http://127.0.0.1:5173` in Chrome or another ordinary browser does not load the Electron preload bridge.
@@ -67,4 +79,4 @@ Run `npm run dev` from a logged-in macOS desktop session and test in the Electro
 
 ## Manual check record
 
-No manual checks are marked complete by this checklist. A prior visual development check confirmed that the popup loaded, capture status appeared, appearance controls changed the theme, and a temporary snippet could be created and deleted. That check did not exercise live clipboard capture, tray menu, global shortcut, native confirmation, notification delivery, external browser launch, or quit cleanup. Re-run the checklist against the current revision before treating those behaviors as verified.
+The feature checklist above remains unchecked because it has not been completed end-to-end. A prior visual development check confirmed that the popup loaded, capture status appeared, appearance controls changed the theme, and a temporary snippet could be created and deleted. The current release run verified DMG mount/checksum, launched the popup from the mounted DMG, observed its packaged renderer URL, tested live text capture and pause/resume baselining, confirmed native history clearing, and quit the app. Tray menu, global shortcut, popup hide/repositioning, search/copy/delete, snippets, themes, notification delivery, and external browser behavior remain unverified in this release pass. Re-run each checklist item against the distributed copy before treating it as release-verified.
